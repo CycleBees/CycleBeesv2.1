@@ -1,0 +1,20 @@
+{
+  "name": "cycle-bees",
+  "version": "1.0.0",
+  "description": "Bicycle repair and rental service app",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run admin\" \"npm run mobile\"",
+    "server": "cd backend && npm run dev",
+    "admin": "cd admin-dashboard && npm start",
+    "mobile": "cd mobile-app && npm start",
+    "install-all": "npm install && cd backend && npm install && cd ../admin-dashboard && npm install && cd ../mobile-app && npm install",
+    "setup": "npm run install-all && cd backend && npm run setup-db"
+  },
+  "keywords": ["bicycle", "repair", "rental", "react-native", "react", "express"],
+  "author": "Cycle-Bees Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+} 
