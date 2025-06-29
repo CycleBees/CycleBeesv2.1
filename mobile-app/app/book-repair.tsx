@@ -10,7 +10,8 @@ import {
   ActivityIndicator,
   Image,
   Dimensions,
-  Platform
+  Platform,
+  Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -63,6 +64,14 @@ export default function BookRepairScreen() {
   // File uploads
   const [images, setImages] = useState<string[]>([]);
   const [video, setVideo] = useState<string | null>(null);
+
+  const [coupon, setCoupon] = useState('');
+  const [couponError, setCouponError] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [discount, setDiscount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState<'online' | 'offline'>('online');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimeSlotPicker, setShowTimeSlotPicker] = useState(false);
 
   useEffect(() => {
     fetchUserProfile();
@@ -182,6 +191,66 @@ export default function BookRepairScreen() {
     return servicesTotal + mechanicCharge;
   };
 
+  const applyCoupon = async () => {
+    setCouponError('');
+    setDiscount(0);
+    setAppliedCoupon(null);
+    if (!coupon.trim()) {
+      setCouponError('Please enter a coupon code');
+      return;
+    }
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        setCouponError('Please login first');
+        return;
+      }
+      // Prepare items array based on selected services and mechanic charge
+      const items = ['service_mechanic_charge']; // Always include mechanic charge
+      selectedServices.forEach(() => {
+        items.push('repair_services');
+      });
+      
+      const totalAmount = calculateTotal();
+      console.log('Applying coupon:', {
+        code: coupon,
+        requestType: 'repair',
+        items: items,
+        totalAmount: totalAmount
+      });
+      
+      const response = await fetch('http://localhost:3000/api/coupon/apply', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          code: coupon, 
+          requestType: 'repair',
+          items: items,
+          totalAmount: totalAmount
+        })
+      });
+      const data = await response.json();
+      console.log('Coupon response:', data);
+      if (response.ok && data.success) {
+        setAppliedCoupon(data.data);
+        setDiscount(data.data.discount || 0);
+        setCouponError(''); // Clear any previous errors
+      } else {
+        setCouponError(data.message || 'Invalid coupon');
+      }
+    } catch (error) {
+      console.error('Coupon apply error:', error);
+      setCouponError('Network error. Please try again.');
+    }
+  };
+
+  const calculateTotalWithDiscount = () => {
+    return Math.max(0, calculateTotal() - discount);
+  };
+
   const handleSubmit = async () => {
     if (selectedServices.length === 0) {
       Alert.alert('Error', 'Please select at least one repair service');
@@ -205,7 +274,10 @@ export default function BookRepairScreen() {
       formDataToSend.append('email', formData.email);
       formDataToSend.append('notes', formData.notes);
       formDataToSend.append('preferred_date', formData.preferred_date.toISOString().split('T')[0]);
-      formDataToSend.append('payment_method', 'online'); // Default for now
+      formDataToSend.append('payment_method', paymentMethod);
+      if (appliedCoupon) {
+        formDataToSend.append('coupon_code', appliedCoupon.code);
+      }
       
       // Add selected services
       selectedServices.forEach((service, index) => {
@@ -257,39 +329,53 @@ export default function BookRepairScreen() {
     }
   };
 
+  const selectDate = (date: Date) => {
+    setFormData({...formData, preferred_date: date});
+    setShowDatePicker(false);
+  };
+
+  const selectTimeSlot = (slotId: number) => {
+    setFormData({...formData, time_slot_id: slotId});
+    setShowTimeSlotPicker(false);
+  };
+
+  const getSelectedTimeSlotText = () => {
+    const selectedSlot = timeSlots.find(s => s.id === formData.time_slot_id);
+    return selectedSlot ? `${selectedSlot.start_time} - ${selectedSlot.end_time}` : 'Select time slot';
+  };
+
   const renderServicesStep = () => (
     <View style={styles.stepContainer}>
       <Text style={styles.stepTitle}>Select Repair Services</Text>
       <Text style={styles.stepSubtitle}>Choose the services you need</Text>
       
-      <ScrollView style={styles.servicesList}>
+      <View style={styles.servicesGrid}>
         {repairServices.map((service) => {
           const isSelected = selectedServices.some(s => s.id === service.id);
           return (
             <TouchableOpacity
               key={service.id}
-              style={[styles.serviceCard, isSelected && styles.serviceCardSelected]}
+              style={[styles.serviceCardCompact, isSelected && styles.serviceCardSelected]}
               onPress={() => toggleService(service)}
             >
-              <View style={styles.serviceHeader}>
-                <Text style={styles.serviceName}>{service.name}</Text>
-                <Text style={styles.servicePrice}>₹{service.price}</Text>
-              </View>
-              <Text style={styles.serviceDescription}>{service.description}</Text>
-              {service.special_instructions && (
-                <Text style={styles.serviceInstructions}>
-                  Note: {service.special_instructions}
-                </Text>
-              )}
-              {isSelected && (
-                <View style={styles.selectedIndicator}>
-                  <Ionicons name="checkmark-circle" size={20} color="#28a745" />
+              <View style={styles.serviceCardContent}>
+                <View style={styles.serviceCardHeader}>
+                  <Text style={styles.serviceNameCompact}>{service.name}</Text>
+                  <Text style={styles.servicePriceCompact}>₹{service.price}</Text>
                 </View>
-              )}
+                <Text style={styles.serviceDescriptionCompact} numberOfLines={2}>
+                  {service.description}
+                </Text>
+                {isSelected && (
+                  <View style={styles.selectedIndicatorCompact}>
+                    <Ionicons name="checkmark-circle" size={16} color="#28a745" />
+                  </View>
+                )}
+              </View>
             </TouchableOpacity>
           );
         })}
-      </ScrollView>
+      </View>
 
       <View style={styles.stepFooter}>
         <Text style={styles.totalText}>
@@ -392,27 +478,31 @@ export default function BookRepairScreen() {
 
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Preferred Date</Text>
-          <Text style={styles.inputValue}>
-            {formData.preferred_date.toLocaleDateString()}
-          </Text>
+          <TouchableOpacity 
+            style={styles.datePickerButton} 
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Text style={styles.datePickerText}>
+              {formData.preferred_date.toLocaleDateString()}
+            </Text>
+            <Ionicons name="calendar" size={20} color="#FFD11E" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Time Slot</Text>
-          {timeSlots.map((slot) => (
-            <TouchableOpacity
-              key={slot.id}
-              style={[
-                styles.timeSlotButton,
-                formData.time_slot_id === slot.id && styles.timeSlotSelected
-              ]}
-              onPress={() => setFormData({...formData, time_slot_id: slot.id})}
-            >
-              <Text style={styles.timeSlotText}>
-                {slot.start_time} - {slot.end_time}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          <TouchableOpacity 
+            style={styles.timeSlotPickerButton} 
+            onPress={() => setShowTimeSlotPicker(true)}
+          >
+            <Text style={[
+              styles.timeSlotPickerText,
+              formData.time_slot_id === 0 && styles.placeholderText
+            ]}>
+              {getSelectedTimeSlotText()}
+            </Text>
+            <Ionicons name="chevron-down" size={20} color="#FFD11E" />
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -477,11 +567,76 @@ export default function BookRepairScreen() {
         )}
 
         <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Coupon</Text>
+          {/* Test coupons: WELCOME10 (min ₹500), FIRST50 (min ₹200) */}
+          <View style={styles.couponInputContainer}>
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              value={coupon}
+              onChangeText={setCoupon}
+              placeholder="Enter coupon code"
+              autoCapitalize="characters"
+            />
+            <TouchableOpacity style={styles.applyCouponButton} onPress={applyCoupon}>
+              <Text style={styles.applyCouponText}>Apply</Text>
+            </TouchableOpacity>
+          </View>
+          {/* Test buttons for development */}
+          <View style={styles.testButtonsContainer}>
+            <TouchableOpacity 
+              style={styles.testButton} 
+              onPress={() => {
+                setCoupon('FIRST50');
+                setTimeout(() => applyCoupon(), 100); // Small delay to ensure state is updated
+              }}
+            >
+              <Text style={styles.testButtonText}>Test FIRST50</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.testButton} 
+              onPress={() => {
+                setCoupon('WELCOME10');
+                setTimeout(() => applyCoupon(), 100); // Small delay to ensure state is updated
+              }}
+            >
+              <Text style={styles.testButtonText}>Test WELCOME10</Text>
+            </TouchableOpacity>
+          </View>
+          {couponError ? <Text style={styles.couponError}>{couponError}</Text> : null}
+          {appliedCoupon && (
+            <Text style={styles.couponSuccess}>
+              Coupon "{appliedCoupon.code}" applied! Discount: ₹{discount}
+            </Text>
+          )}
+        </View>
+
+        <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Payment Method</Text>
+          <View style={styles.paymentOptionsContainer}>
+            <TouchableOpacity
+              style={[styles.paymentOption, paymentMethod === 'online' && styles.paymentOptionSelected]}
+              onPress={() => setPaymentMethod('online')}
+            >
+              <Ionicons name={paymentMethod === 'online' ? 'radio-button-on' : 'radio-button-off'} size={20} color="#FFD11E" />
+              <Text style={styles.paymentOptionText}>Online</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.paymentOption, paymentMethod === 'offline' && styles.paymentOptionSelected]}
+              onPress={() => setPaymentMethod('offline')}
+            >
+              <Ionicons name={paymentMethod === 'offline' ? 'radio-button-on' : 'radio-button-off'} size={20} color="#FFD11E" />
+              <Text style={styles.paymentOptionText}>Offline</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.summarySection}>
           <Text style={styles.summarySectionTitle}>Total Amount</Text>
           <View style={styles.totalBreakdown}>
             <Text style={styles.totalItem}>Services: ₹{selectedServices.reduce((sum, s) => sum + s.price, 0)}</Text>
             <Text style={styles.totalItem}>Mechanic Charge: ₹{mechanicCharge}</Text>
-            <Text style={styles.totalAmount}>Total: ₹{calculateTotal()}</Text>
+            {discount > 0 && <Text style={styles.totalItem}>Discount: -₹{discount}</Text>}
+            <Text style={styles.totalAmount}>Total: ₹{calculateTotalWithDiscount()}</Text>
           </View>
         </View>
       </ScrollView>
@@ -527,6 +682,79 @@ export default function BookRepairScreen() {
       {step === 'services' && renderServicesStep()}
       {step === 'details' && renderDetailsStep()}
       {step === 'summary' && renderSummaryStep()}
+
+      {/* Date Picker Modal */}
+      <Modal
+        visible={showDatePicker}
+        transparent={true}
+        animationType="slide"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Date</Text>
+            <ScrollView style={styles.dateList}>
+              {Array.from({ length: 30 }, (_, i) => {
+                const date = new Date();
+                date.setDate(date.getDate() + i + 1);
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    style={styles.dateOption}
+                    onPress={() => selectDate(date)}
+                  >
+                    <Text style={styles.dateOptionText}>
+                      {date.toLocaleDateString('en-US', { 
+                        weekday: 'long', 
+                        year: 'numeric', 
+                        month: 'long', 
+                        day: 'numeric' 
+                      })}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setShowDatePicker(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Time Slot Picker Modal */}
+      <Modal
+        visible={showTimeSlotPicker}
+        transparent={true}
+        animationType="slide"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Time Slot</Text>
+            <ScrollView style={styles.timeSlotList}>
+              {timeSlots.map((slot) => (
+                <TouchableOpacity
+                  key={slot.id}
+                  style={styles.timeSlotOption}
+                  onPress={() => selectTimeSlot(slot.id)}
+                >
+                  <Text style={styles.timeSlotOptionText}>
+                    {slot.start_time} - {slot.end_time}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setShowTimeSlotPicker(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -586,52 +814,55 @@ const styles = StyleSheet.create({
     color: '#6c757d',
     marginBottom: 24,
   },
-  servicesList: {
+  servicesGrid: {
     flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  serviceCard: {
+  serviceCardCompact: {
+    width: (width - 48) / 2,
     backgroundColor: '#f8f9fa',
-    padding: 16,
     borderRadius: 12,
-    marginBottom: 12,
     borderWidth: 2,
     borderColor: '#dee2e6',
+    padding: 12,
+    marginBottom: 8,
   },
   serviceCardSelected: {
     borderColor: '#FFD11E',
     backgroundColor: '#FFF5CC',
   },
-  serviceHeader: {
+  serviceCardContent: {
+    position: 'relative',
+  },
+  serviceCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
-  serviceName: {
-    fontSize: 16,
+  serviceNameCompact: {
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#2D3E50',
     flex: 1,
   },
-  servicePrice: {
-    fontSize: 16,
+  servicePriceCompact: {
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#FFD11E',
   },
-  serviceDescription: {
-    fontSize: 14,
-    color: '#6c757d',
-    marginBottom: 8,
-  },
-  serviceInstructions: {
+  serviceDescriptionCompact: {
     fontSize: 12,
-    color: '#dc3545',
-    fontStyle: 'italic',
+    color: '#4A4A4A',
+    lineHeight: 16,
   },
-  selectedIndicator: {
+  selectedIndicatorCompact: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: -4,
+    right: -4,
   },
   stepFooter: {
     paddingTop: 16,
@@ -739,48 +970,93 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#2D3E50',
   },
-  timeSlotButton: {
-    backgroundColor: '#f8f9fa',
+  datePickerButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#dee2e6',
+    borderRadius: 8,
+    backgroundColor: '#fff',
   },
-  timeSlotSelected: {
-    borderColor: '#FFD11E',
-    backgroundColor: '#FFF5CC',
-  },
-  timeSlotText: {
+  datePickerText: {
     fontSize: 16,
     color: '#2D3E50',
+  },
+  timeSlotPickerButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+  },
+  timeSlotPickerText: {
+    fontSize: 16,
+    color: '#2D3E50',
+  },
+  placeholderText: {
+    color: '#6c757d',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    margin: 20,
+    maxHeight: '80%',
+    width: '90%',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginBottom: 16,
     textAlign: 'center',
   },
-  stepBackButton: {
-    backgroundColor: '#6c757d',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 12,
+  dateList: {
+    maxHeight: 300,
   },
-  backButtonText: {
-    color: '#fff',
+  dateOption: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  dateOptionText: {
     fontSize: 16,
-    fontWeight: 'bold',
+    color: '#2D3E50',
   },
-  submitButton: {
-    backgroundColor: '#28a745',
-    padding: 16,
-    borderRadius: 12,
+  timeSlotList: {
+    maxHeight: 300,
+  },
+  timeSlotOption: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  timeSlotOptionText: {
+    fontSize: 16,
+    color: '#2D3E50',
+  },
+  cancelButton: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
     alignItems: 'center',
   },
-  submitButtonText: {
-    color: '#fff',
+  cancelButtonText: {
+    color: '#6c757d',
     fontSize: 16,
-    fontWeight: 'bold',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
+    fontWeight: '600',
   },
   summaryContainer: {
     flex: 1,
@@ -835,5 +1111,96 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#2D3E50',
     marginTop: 8,
+  },
+  couponInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  applyCouponButton: {
+    backgroundColor: '#FFD11E',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  applyCouponText: {
+    color: '#2D3E50',
+    fontWeight: 'bold',
+  },
+  couponError: {
+    color: '#dc3545',
+    marginTop: 4,
+  },
+  couponSuccess: {
+    color: '#28a745',
+    marginTop: 4,
+  },
+  paymentOptionsContainer: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 8,
+  },
+  paymentOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    marginRight: 8,
+  },
+  paymentOptionSelected: {
+    backgroundColor: '#FFF5CC',
+    borderColor: '#FFD11E',
+  },
+  paymentOptionText: {
+    marginLeft: 8,
+    color: '#2D3E50',
+    fontWeight: '600',
+  },
+  submitButton: {
+    backgroundColor: '#28a745',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  stepBackButton: {
+    backgroundColor: '#6c757d',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  backButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  testButtonsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  testButton: {
+    backgroundColor: '#FFD11E',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  testButtonText: {
+    color: '#2D3E50',
+    fontWeight: 'bold',
+    fontSize: 12,
   },
 }); 
