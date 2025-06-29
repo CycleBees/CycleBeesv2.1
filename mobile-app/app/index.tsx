@@ -9,10 +9,17 @@ import {
   Alert,
   RefreshControl,
   Dimensions,
-  Linking
+  Linking,
+  Platform,
+  Modal,
+  Pressable,
+  Animated
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
 
 interface PromotionalCard {
   id: number;
@@ -36,27 +43,76 @@ interface User {
 
 const { width } = Dimensions.get('window');
 
-export default function HomeScreen({ navigation }: any) {
+export default function HomeScreen() {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [promotionalCards, setPromotionalCards] = useState<PromotionalCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [dotAnimations] = useState([
+    new Animated.Value(0),
+    new Animated.Value(0),
+    new Animated.Value(0)
+  ]);
 
   useEffect(() => {
     checkAuthStatus();
     fetchPromotionalCards();
   }, []);
 
-  const checkAuthStatus = () => {
-    const token = localStorage.getItem('userToken');
-    if (token) {
-      fetchUserProfile();
+  useEffect(() => {
+    if (isInitializing) {
+      const animateDots = () => {
+        const animations = dotAnimations.map((anim, index) =>
+          Animated.sequence([
+            Animated.delay(index * 200),
+            Animated.loop(
+              Animated.sequence([
+                Animated.timing(anim, {
+                  toValue: 1,
+                  duration: 600,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(anim, {
+                  toValue: 0,
+                  duration: 600,
+                  useNativeDriver: true,
+                }),
+              ])
+            ),
+          ])
+        );
+        Animated.parallel(animations).start();
+      };
+      animateDots();
+    }
+  }, [isInitializing, dotAnimations]);
+
+  const checkAuthStatus = async () => {
+    try {
+      setIsInitializing(true);
+      const token = await AsyncStorage.getItem('userToken');
+      
+      if (token) {
+        console.log('Token found, fetching user profile...');
+        await fetchUserProfile();
+      } else {
+        console.log('No token found, user not logged in');
+        setUser(null);
+      }
+    } catch (error) {
+      console.error('Error checking auth status:', error);
+      setUser(null);
+    } finally {
+      setIsInitializing(false);
     }
   };
 
   const fetchUserProfile = async () => {
     try {
-      const token = localStorage.getItem('userToken');
+      const token = await AsyncStorage.getItem('userToken');
       const response = await fetch('http://localhost:3000/api/auth/profile', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -65,8 +121,8 @@ export default function HomeScreen({ navigation }: any) {
       });
 
       if (response.ok) {
-        const userData = await response.json();
-        setUser(userData);
+        const data = await response.json();
+        setUser(data.data.user);
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
@@ -80,7 +136,7 @@ export default function HomeScreen({ navigation }: any) {
       
       if (response.ok) {
         const data = await response.json();
-        setPromotionalCards(data);
+        setPromotionalCards(data.data || []);
       }
     } catch (error) {
       console.error('Error fetching promotional cards:', error);
@@ -105,24 +161,127 @@ export default function HomeScreen({ navigation }: any) {
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: () => {
-            localStorage.removeItem('userToken');
-            setUser(null);
-            navigation.navigate('Login');
-          }
-        }
-      ]
-    );
+    console.log('Logout button pressed');
+    
+    // For debugging, let's try a simple approach first
+    const performLogout = async () => {
+      try {
+        console.log('Performing logout...');
+        
+        // Clear all storage
+        await AsyncStorage.clear();
+        console.log('All storage cleared');
+        
+        // Clear user state
+        setUser(null);
+        console.log('User state cleared');
+        
+        // Navigate to login
+        router.push('/login');
+        console.log('Navigated to login page');
+        
+      } catch (error) {
+        console.error('Logout error:', error);
+        Alert.alert('Error', 'Failed to logout. Please try again.');
+      }
+    };
+
+    // Show custom modal for confirmation
+    setShowLogoutModal(true);
   };
 
+  const confirmLogout = async () => {
+    setShowLogoutModal(false);
+    try {
+      console.log('Performing logout...');
+      
+      // Clear all storage
+      await AsyncStorage.clear();
+      console.log('All storage cleared');
+      
+      // Clear user state
+      setUser(null);
+      console.log('User state cleared');
+      
+      // Navigate to login
+      router.push('/login');
+      console.log('Navigated to login page');
+      
+    } catch (error) {
+      console.error('Logout error:', error);
+      Alert.alert('Error', 'Failed to logout. Please try again.');
+    }
+  };
+
+  const cancelLogout = () => {
+    setShowLogoutModal(false);
+  };
+
+  const debugAuthState = async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      console.log('=== DEBUG AUTH STATE ===');
+      console.log('Token exists:', !!token);
+      console.log('Token value:', token);
+      console.log('User state:', user);
+      console.log('=======================');
+    } catch (error) {
+      console.error('Debug error:', error);
+    }
+  };
+
+  // Add debug on mount
+  useEffect(() => {
+    debugAuthState();
+  }, [user]);
+
+  // Show loading screen while initializing
+  if (isInitializing) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <View style={styles.loadingContent}>
+            <View style={styles.loadingIcon}>
+              <Ionicons name="bicycle" size={48} color="#FFD11E" />
+            </View>
+            <Text style={styles.loadingTitle}>Cycle-Bees</Text>
+            <Text style={styles.loadingSubtitle}>Loading your experience...</Text>
+            <View style={styles.loadingSpinner}>
+              <Animated.View 
+                style={[
+                  styles.spinnerDot, 
+                  { 
+                    transform: [{ scale: dotAnimations[0] }],
+                    opacity: dotAnimations[0]
+                  }
+                ]} 
+              />
+              <Animated.View 
+                style={[
+                  styles.spinnerDot, 
+                  { 
+                    transform: [{ scale: dotAnimations[1] }],
+                    opacity: dotAnimations[1]
+                  }
+                ]} 
+              />
+              <Animated.View 
+                style={[
+                  styles.spinnerDot, 
+                  { 
+                    transform: [{ scale: dotAnimations[2] }],
+                    opacity: dotAnimations[2]
+                  }
+                ]} 
+              />
+            </View>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Show login screen if user is not authenticated
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
@@ -135,7 +294,7 @@ export default function HomeScreen({ navigation }: any) {
           <View style={styles.authButtons}>
             <TouchableOpacity
               style={styles.authButton}
-              onPress={() => navigation.navigate('Login')}
+              onPress={() => router.push('/login')}
             >
               <Text style={styles.authButtonText}>Login / Sign Up</Text>
             </TouchableOpacity>
@@ -204,7 +363,7 @@ export default function HomeScreen({ navigation }: any) {
           <View style={styles.actionsGrid}>
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => navigation.navigate('BookRepair')}
+              onPress={() => router.push('/book-repair')}
             >
               <View style={styles.actionIcon}>
                 <Ionicons name="construct-outline" size={32} color="#FFD11E" />
@@ -215,7 +374,7 @@ export default function HomeScreen({ navigation }: any) {
 
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => navigation.navigate('BookRental')}
+              onPress={() => router.push('/book-rental')}
             >
               <View style={styles.actionIcon}>
                 <Ionicons name="bicycle-outline" size={32} color="#FFD11E" />
@@ -226,7 +385,7 @@ export default function HomeScreen({ navigation }: any) {
 
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => navigation.navigate('MyRequests')}
+              onPress={() => router.push('/my-requests')}
             >
               <View style={styles.actionIcon}>
                 <Ionicons name="list-outline" size={32} color="#FFD11E" />
@@ -237,7 +396,7 @@ export default function HomeScreen({ navigation }: any) {
 
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => navigation.navigate('Profile')}
+              onPress={() => router.push('/profile')}
             >
               <View style={styles.actionIcon}>
                 <Ionicons name="person-outline" size={32} color="#FFD11E" />
@@ -270,6 +429,43 @@ export default function HomeScreen({ navigation }: any) {
           </View>
         </View>
       </ScrollView>
+      
+      {/* Custom Logout Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showLogoutModal}
+        onRequestClose={cancelLogout}
+      >
+        <Pressable style={styles.modalOverlay} onPress={cancelLogout}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Ionicons name="log-out-outline" size={32} color="#FFD11E" />
+              <Text style={styles.modalTitle}>Logout</Text>
+            </View>
+            
+            <Text style={styles.modalMessage}>
+              Are you sure you want to logout from Cycle-Bees?
+            </Text>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={cancelLogout}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalLogoutButton]}
+                onPress={confirmLogout}
+              >
+                <Text style={styles.logoutButtonText}>Logout</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -357,14 +553,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 12,
     marginRight: 15,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
   },
   cardImage: {
     width: '100%',
@@ -401,14 +604,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 15,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
   },
   actionIcon: {
     width: 60,
@@ -445,14 +655,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
   },
   serviceTitle: {
     fontSize: 16,
@@ -467,5 +684,111 @@ const styles = StyleSheet.create({
     marginLeft: 15,
     flex: 2,
     lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    margin: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+    minWidth: 300,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginTop: 8,
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#4A4A4A',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+  },
+  cancelButtonText: {
+    color: '#6c757d',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalLogoutButton: {
+    backgroundColor: '#dc3545',
+  },
+  logoutButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContent: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  loadingIcon: {
+    backgroundColor: '#FFD11E',
+    borderRadius: 30,
+    padding: 10,
+    marginBottom: 10,
+  },
+  loadingTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginBottom: 5,
+  },
+  loadingSubtitle: {
+    fontSize: 14,
+    color: '#4A4A4A',
+  },
+  loadingSpinner: {
+    flexDirection: 'row',
+    gap: 5,
+  },
+  spinnerDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FFD11E',
   },
 }); 

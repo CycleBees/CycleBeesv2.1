@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 
 interface Bicycle {
   id: number;
@@ -28,7 +30,8 @@ interface Bicycle {
 
 const { width } = Dimensions.get('window');
 
-export default function BookRentalScreen({ navigation }: any) {
+export default function BookRentalScreen() {
+  const router = useRouter();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [bicycles, setBicycles] = useState<Bicycle[]>([]);
@@ -71,7 +74,7 @@ export default function BookRentalScreen({ navigation }: any) {
     }
 
     try {
-      const token = localStorage.getItem('userToken');
+      const token = await AsyncStorage.getItem('userToken');
       const response = await fetch('http://localhost:3000/api/coupon/apply', {
         method: 'POST',
         headers: {
@@ -132,7 +135,7 @@ export default function BookRentalScreen({ navigation }: any) {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('userToken');
+      const token = await AsyncStorage.getItem('userToken');
       const response = await fetch('http://localhost:3000/api/rental/requests', {
         method: 'POST',
         headers: {
@@ -156,7 +159,7 @@ export default function BookRentalScreen({ navigation }: any) {
         Alert.alert(
           'Success',
           'Rental request submitted successfully! You will be notified once admin approves.',
-          [{ text: 'OK', onPress: () => navigation.navigate('MyRequests') }]
+          [{ text: 'OK', onPress: () => router.push('/my-requests') }]
         );
       } else {
         const error = await response.json();
@@ -510,7 +513,7 @@ export default function BookRentalScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#2D3E50" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Book Rental</Text>

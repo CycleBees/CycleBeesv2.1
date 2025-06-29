@@ -1268,6 +1268,55 @@ PUT/DELETE /api/promotional/admin/:id - Updates/deletes cards
 - **UI/UX:** Adapt Cycle-Bees design for mobile
 - **Testing:** Use same verification procedures
 
+#### **✅ **Mobile App (React Native + Expo) - Current State & Backend Integration**
+
+#### **Authentication & Registration Flow**
+- **Phone OTP Login/Signup:**
+  - User enters Indian mobile number (validated client-side)
+  - OTP sent via backend (`/api/auth/send-otp`), verified via `/api/auth/verify-otp`
+  - New users complete registration (full name, email, age, pincode, address)
+  - Registration form validates all fields and checks for duplicate phone/email
+  - After successful registration, user is logged in and redirected to dashboard
+
+#### **Session Management**
+- **JWT Token** stored in AsyncStorage after login/registration
+- **On app load/refresh:**
+  - App shows a branded loading animation while checking for token/profile
+  - No flash of login page during auth check
+  - If token is valid, user is auto-logged in; else, login page is shown
+
+#### **Logout Flow**
+- **Logout button** in header opens a custom modal (not browser confirm)
+- Modal uses Cycle-Bees branding, clear messaging, and two buttons (Cancel, Logout)
+- Logout clears AsyncStorage, resets user state, and navigates to login
+- Works on both web and native platforms
+
+#### **UI/UX Enhancements**
+- **Loading animation** (bouncing dots, bicycle icon, Cycle-Bees colors) on app init
+- **All forms** have real-time validation and inline error messages
+- **OTP step** disables button unless valid, shows errors inline, and has resend with cooldown
+- **Registration** disables button if any field is invalid/loading
+- **After registration:** user is logged in and redirected, not sent back to phone step
+- **No duplicate/used phone/email allowed** (checked and shown inline)
+- **Consistent color scheme** and branding throughout
+
+#### **Backend Connections**
+- All authentication, registration, and profile endpoints are fully integrated:
+  - `/api/auth/send-otp`, `/api/auth/verify-otp`, `/api/auth/register`, `/api/auth/profile`
+- All requests use proper headers and handle backend error messages
+- Error messages from backend are shown to user in a friendly way
+
+#### **Testing & Verification**
+- All flows tested on web and native (Expo)
+- Edge cases (invalid phone, duplicate email, expired OTP, etc.) handled gracefully
+- No major UI/UX bugs or broken flows
+
+#### **Summary**
+- The mobile app is now fully connected to the backend for authentication and registration
+- User experience is smooth, modern, and branded
+- All error cases are handled with clear feedback
+- The app is ready for further feature development (repairs, rentals, profile, etc.)
+
 ### 🚀 **Next Steps**
 
 #### **Immediate (Mobile App Development)**

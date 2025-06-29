@@ -7,10 +7,13 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
-  Dimensions
+  Dimensions,
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 
 interface RepairRequest {
   id: number;
@@ -37,7 +40,8 @@ interface RentalRequest {
 
 const { width } = Dimensions.get('window');
 
-export default function MyRequestsScreen({ navigation }: any) {
+export default function MyRequestsScreen() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'repair' | 'rental'>('repair');
   const [repairRequests, setRepairRequests] = useState<RepairRequest[]>([]);
   const [rentalRequests, setRentalRequests] = useState<RentalRequest[]>([]);
@@ -51,7 +55,7 @@ export default function MyRequestsScreen({ navigation }: any) {
   const fetchRequests = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('userToken');
+      const token = await AsyncStorage.getItem('userToken');
       
       if (activeTab === 'repair') {
         const response = await fetch('http://localhost:3000/api/repair/requests', {
@@ -146,7 +150,7 @@ export default function MyRequestsScreen({ navigation }: any) {
           </Text>
           <TouchableOpacity
             style={styles.emptyStateButton}
-            onPress={() => navigation.navigate('BookRepair')}
+            onPress={() => router.push('/book-repair')}
           >
             <Text style={styles.emptyStateButtonText}>Book Your First Repair</Text>
           </TouchableOpacity>
@@ -235,7 +239,7 @@ export default function MyRequestsScreen({ navigation }: any) {
           </Text>
           <TouchableOpacity
             style={styles.emptyStateButton}
-            onPress={() => navigation.navigate('BookRental')}
+            onPress={() => router.push('/book-rental')}
           >
             <Text style={styles.emptyStateButtonText}>Rent Your First Bicycle</Text>
           </TouchableOpacity>
@@ -309,7 +313,7 @@ export default function MyRequestsScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#2D3E50" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Requests</Text>
@@ -381,14 +385,21 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginTop: 20,
     borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
   },
   tabButton: {
     flex: 1,
@@ -452,14 +463,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 20,
     marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
   },
   requestHeader: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,12 +13,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 
-interface LoginScreenProps {
-  navigation: any;
-}
-
-export default function LoginScreen({ navigation }: LoginScreenProps) {
+export default function LoginScreen() {
+  const router = useRouter();
   const [step, setStep] = useState<'phone' | 'otp' | 'register'>('phone');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
@@ -31,13 +30,72 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
     pincode: '',
     address: ''
   });
+  const [errors, setErrors] = useState({
+    phone: '',
+    email: '',
+    full_name: '',
+    age: '',
+    pincode: '',
+    address: '',
+    general: ''
+  });
+  const [otpError, setOtpError] = useState('');
+  const [otpCooldown, setOtpCooldown] = useState(0);
+
+  // Clear any existing user state when login page loads
+  useEffect(() => {
+    const clearUserState = async () => {
+      try {
+        // Clear all storage to ensure clean logout
+        await AsyncStorage.clear();
+        console.log('Cleared all storage on login page load');
+        
+        // Reset all state
+        setStep('phone');
+        setPhone('');
+        setOtp('');
+        setIsNewUser(false);
+        setRegistrationData({
+          full_name: '',
+          email: '',
+          age: '',
+          pincode: '',
+          address: ''
+        });
+        console.log('Reset all login state');
+      } catch (error) {
+        console.error('Error clearing user state:', error);
+      }
+    };
+    
+    clearUserState();
+  }, []);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    if (otpCooldown > 0) {
+      timer = setTimeout(() => setOtpCooldown(otpCooldown - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [otpCooldown]);
+
+  const validatePhone = (value: string) => {
+    const phoneRegex = /^[6-9]\d{9}$/;
+    return phoneRegex.test(value);
+  };
+
+  const validateEmail = (value: string) => {
+    return /.+@.+\..+/.test(value);
+  };
 
   const handleSendOTP = async () => {
-    if (!phone || phone.length !== 10) {
-      Alert.alert('Error', 'Please enter a valid 10-digit phone number');
+    if (!validatePhone(phone)) {
+      setErrors((prev) => ({ ...prev, phone: 'Please enter a valid 10-digit Indian mobile number' }));
+      Alert.alert('Error', 'Please enter a valid 10-digit Indian mobile number');
       return;
     }
-
+    setErrors((prev) => ({ ...prev, phone: '' }));
+    setOtpError('');
     setLoading(true);
     try {
       const response = await fetch('http://localhost:3000/api/auth/send-otp', {
@@ -47,15 +105,19 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
         },
         body: JSON.stringify({ phone })
       });
-
+      const data = await response.json();
       if (response.ok) {
         setStep('otp');
+        setOtpCooldown(30);
         Alert.alert('Success', 'OTP sent to your phone number');
       } else {
-        const error = await response.json();
-        Alert.alert('Error', error.message || 'Failed to send OTP');
+        setErrors((prev) => ({ ...prev, phone: data.message || 'Failed to send OTP' }));
+        setOtpError(data.message || 'Failed to send OTP');
+        Alert.alert('Error', data.message || 'Failed to send OTP');
       }
     } catch (error) {
+      setErrors((prev) => ({ ...prev, phone: 'Network error. Please try again.' }));
+      setOtpError('Network error. Please try again.');
       Alert.alert('Error', 'Network error. Please try again.');
     } finally {
       setLoading(false);
@@ -63,11 +125,11 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
   };
 
   const handleVerifyOTP = async () => {
+    setOtpError('');
     if (!otp || otp.length !== 6) {
-      Alert.alert('Error', 'Please enter a valid 6-digit OTP');
+      setOtpError('Please enter a valid 6-digit OTP');
       return;
     }
-
     setLoading(true);
     try {
       const response = await fetch('http://localhost:3000/api/auth/verify-otp', {
@@ -77,24 +139,20 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
         },
         body: JSON.stringify({ phone, otp })
       });
-
+      const data = await response.json();
       if (response.ok) {
-        const data = await response.json();
-        
-        if (data.isNewUser) {
+        if (data.data.isNewUser) {
           setIsNewUser(true);
           setStep('register');
         } else {
-          // Existing user - login successful
-          localStorage.setItem('userToken', data.token);
-          navigation.navigate('Home');
+          await AsyncStorage.setItem('userToken', data.data.token);
+          router.push('/');
         }
       } else {
-        const error = await response.json();
-        Alert.alert('Error', error.message || 'Invalid OTP');
+        setOtpError(data.message || 'Invalid OTP');
       }
     } catch (error) {
-      Alert.alert('Error', 'Network error. Please try again.');
+      setOtpError('Network error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -103,39 +161,77 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
   const handleRegister = async () => {
     // Validate registration data
     const { full_name, email, age, pincode, address } = registrationData;
-    if (!full_name || !email || !age || !pincode || !address) {
-      Alert.alert('Error', 'Please fill in all required fields');
-      return;
+    let hasError = false;
+    let newErrors = { ...errors, general: '' };
+    if (!full_name) {
+      newErrors.full_name = 'Full name is required';
+      hasError = true;
+    } else {
+      newErrors.full_name = '';
     }
-
+    if (!validateEmail(email)) {
+      newErrors.email = 'Please enter a valid email address';
+      hasError = true;
+    } else {
+      newErrors.email = '';
+    }
+    if (!age || isNaN(Number(age)) || Number(age) < 1 || Number(age) > 120) {
+      newErrors.age = 'Please enter a valid age';
+      hasError = true;
+    } else {
+      newErrors.age = '';
+    }
+    if (!pincode || pincode.length !== 6) {
+      newErrors.pincode = 'Pincode must be 6 digits';
+      hasError = true;
+    } else {
+      newErrors.pincode = '';
+    }
+    if (!address || address.length < 10) {
+      newErrors.address = 'Address is required (min 10 chars)';
+      hasError = true;
+    } else {
+      newErrors.address = '';
+    }
+    setErrors(newErrors);
+    if (hasError) return;
     setLoading(true);
     try {
+      const requestBody = {
+        phone,
+        full_name,
+        email,
+        age: parseInt(age),
+        pincode,
+        address
+      };
+      console.log('Sending registration data:', requestBody);
       const response = await fetch('http://localhost:3000/api/auth/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          phone,
-          full_name,
-          email,
-          age: parseInt(age),
-          pincode,
-          address
-        })
+        body: JSON.stringify(requestBody)
       });
-
+      const data = await response.json();
+      console.log('Registration response:', { status: response.status, data });
       if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('userToken', data.token);
-        Alert.alert('Success', 'Registration successful!', [
-          { text: 'OK', onPress: () => navigation.navigate('Home') }
-        ]);
+        await AsyncStorage.setItem('userToken', data.data.token);
+        // Registration successful - navigate directly to dashboard
+        router.push('/');
       } else {
-        const error = await response.json();
-        Alert.alert('Error', error.message || 'Registration failed');
+        // Show specific error for email/phone
+        if (data.message && data.message.includes('email')) {
+          setErrors((prev) => ({ ...prev, email: data.message }));
+        } else if (data.message && data.message.includes('phone')) {
+          setErrors((prev) => ({ ...prev, phone: data.message }));
+        } else {
+          setErrors((prev) => ({ ...prev, general: data.message || 'Registration failed. Please try again.' }));
+        }
+        Alert.alert('Registration Failed', data.message || 'Registration failed. Please try again.');
       }
     } catch (error) {
+      setErrors((prev) => ({ ...prev, general: 'Network error. Please try again.' }));
       Alert.alert('Error', 'Network error. Please try again.');
     } finally {
       setLoading(false);
@@ -157,17 +253,21 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
         <TextInput
           style={styles.input}
           value={phone}
-          onChangeText={setPhone}
+          onChangeText={(text) => {
+            setPhone(text);
+            setErrors((prev) => ({ ...prev, phone: '' }));
+          }}
           placeholder="Enter 10-digit phone number"
           keyboardType="phone-pad"
           maxLength={10}
         />
+        {!!errors.phone && <Text style={{ color: 'red', marginTop: 4 }}>{errors.phone}</Text>}
       </View>
 
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
         onPress={handleSendOTP}
-        disabled={loading}
+        disabled={loading || !validatePhone(phone)}
       >
         {loading ? (
           <ActivityIndicator color="#2D3E50" />
@@ -179,31 +279,36 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
   );
 
   const renderOTPStep = () => (
-    <View style={styles.stepContainer}>
+    <View style={[styles.stepContainer, styles.shadow]}>
+      {otpError ? <Text style={styles.globalError}>{otpError}</Text> : null}
       <View style={styles.iconContainer}>
-        <Ionicons name="key" size={60} color="#FFD11E" />
+        <Ionicons name="key" size={60} color="#FFD11E" accessibilityLabel="OTP Icon" />
       </View>
       <Text style={styles.title}>Enter Verification Code</Text>
       <Text style={styles.subtitle}>
         We've sent a 6-digit code to {phone}
       </Text>
-      
       <View style={styles.inputContainer}>
         <Text style={styles.inputLabel}>OTP Code</Text>
         <TextInput
           style={styles.input}
           value={otp}
-          onChangeText={setOtp}
+          onChangeText={(text) => {
+            setOtp(text);
+            setOtpError('');
+          }}
           placeholder="Enter 6-digit OTP"
           keyboardType="number-pad"
           maxLength={6}
+          accessibilityLabel="OTP Input"
         />
+        {!!otpError && <Text style={styles.errorText}>{otpError}</Text>}
       </View>
-
       <TouchableOpacity
-        style={[styles.button, loading && styles.buttonDisabled]}
+        style={[styles.button, (loading || otp.length !== 6) && styles.buttonDisabled]}
         onPress={handleVerifyOTP}
-        disabled={loading}
+        disabled={loading || otp.length !== 6}
+        accessibilityLabel="Verify OTP Button"
       >
         {loading ? (
           <ActivityIndicator color="#2D3E50" />
@@ -211,10 +316,18 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           <Text style={styles.buttonText}>Verify OTP</Text>
         )}
       </TouchableOpacity>
-
+      <TouchableOpacity
+        style={[styles.button, otpCooldown > 0 && styles.buttonDisabled]}
+        onPress={handleSendOTP}
+        disabled={otpCooldown > 0}
+        accessibilityLabel="Resend OTP Button"
+      >
+        <Text style={styles.buttonText}>{otpCooldown > 0 ? `Resend OTP (${otpCooldown}s)` : 'Resend OTP'}</Text>
+      </TouchableOpacity>
       <TouchableOpacity
         style={styles.backButton}
         onPress={() => setStep('phone')}
+        accessibilityLabel="Back to Phone Button"
       >
         <Text style={styles.backButtonText}>← Back to Phone</Text>
       </TouchableOpacity>
@@ -237,9 +350,13 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           <TextInput
             style={styles.input}
             value={registrationData.full_name}
-            onChangeText={(text) => setRegistrationData({...registrationData, full_name: text})}
+            onChangeText={(text) => {
+              setRegistrationData({ ...registrationData, full_name: text });
+              setErrors((prev) => ({ ...prev, full_name: '' }));
+            }}
             placeholder="Enter your full name"
           />
+          {!!errors.full_name && <Text style={{ color: 'red', marginTop: 4 }}>{errors.full_name}</Text>}
         </View>
 
         <View style={styles.inputContainer}>
@@ -247,11 +364,15 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           <TextInput
             style={styles.input}
             value={registrationData.email}
-            onChangeText={(text) => setRegistrationData({...registrationData, email: text})}
+            onChangeText={(text) => {
+              setRegistrationData({ ...registrationData, email: text });
+              setErrors((prev) => ({ ...prev, email: '' }));
+            }}
             placeholder="Enter your email"
             keyboardType="email-address"
             autoCapitalize="none"
           />
+          {!!errors.email && <Text style={{ color: 'red', marginTop: 4 }}>{errors.email}</Text>}
         </View>
 
         <View style={styles.inputContainer}>
@@ -259,10 +380,14 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           <TextInput
             style={styles.input}
             value={registrationData.age}
-            onChangeText={(text) => setRegistrationData({...registrationData, age: text})}
+            onChangeText={(text) => {
+              setRegistrationData({ ...registrationData, age: text });
+              setErrors((prev) => ({ ...prev, age: '' }));
+            }}
             placeholder="Enter your age"
             keyboardType="number-pad"
           />
+          {!!errors.age && <Text style={{ color: 'red', marginTop: 4 }}>{errors.age}</Text>}
         </View>
 
         <View style={styles.inputContainer}>
@@ -270,11 +395,15 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           <TextInput
             style={styles.input}
             value={registrationData.pincode}
-            onChangeText={(text) => setRegistrationData({...registrationData, pincode: text})}
+            onChangeText={(text) => {
+              setRegistrationData({ ...registrationData, pincode: text });
+              setErrors((prev) => ({ ...prev, pincode: '' }));
+            }}
             placeholder="Enter your pincode"
             keyboardType="number-pad"
             maxLength={6}
           />
+          {!!errors.pincode && <Text style={{ color: 'red', marginTop: 4 }}>{errors.pincode}</Text>}
         </View>
 
         <View style={styles.inputContainer}>
@@ -282,18 +411,23 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           <TextInput
             style={[styles.input, styles.textArea]}
             value={registrationData.address}
-            onChangeText={(text) => setRegistrationData({...registrationData, address: text})}
+            onChangeText={(text) => {
+              setRegistrationData({ ...registrationData, address: text });
+              setErrors((prev) => ({ ...prev, address: '' }));
+            }}
             placeholder="Enter your complete address"
             multiline
             numberOfLines={3}
           />
+          {!!errors.address && <Text style={{ color: 'red', marginTop: 4 }}>{errors.address}</Text>}
         </View>
+        {!!errors.general && <Text style={{ color: 'red', marginTop: 4 }}>{errors.general}</Text>}
       </ScrollView>
 
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
         onPress={handleRegister}
-        disabled={loading}
+        disabled={loading || !registrationData.full_name || !validateEmail(registrationData.email) || !registrationData.age || !registrationData.pincode || !registrationData.address}
       >
         {loading ? (
           <ActivityIndicator color="#2D3E50" />
@@ -321,7 +455,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => navigation.goBack()}
+              onPress={() => router.back()}
             >
               <Ionicons name="arrow-back" size={24} color="#2D3E50" />
             </TouchableOpacity>
@@ -432,6 +566,29 @@ const styles = StyleSheet.create({
   backButtonText: {
     color: '#4A4A4A',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  shadow: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+  },
+  globalError: {
+    color: '#fff',
+    backgroundColor: '#dc3545',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  errorText: {
+    color: '#dc3545',
+    marginTop: 4,
     fontWeight: '600',
   },
 }); 

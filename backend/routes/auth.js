@@ -2,12 +2,50 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
+const { authenticateToken, requireUser, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 // Database connection
 const sqlite3 = require('sqlite3').verbose();
 const dbPath = process.env.DB_PATH || './database/cyclebees.db';
 const db = new sqlite3.Database(dbPath);
+
+// Configure multer for profile photo uploads
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, '../uploads/profile-photos');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+        files: 1 // Max 1 photo
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
+        
+        if (mimetype && extname) {
+            return cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed!'));
+        }
+    }
+});
 
 // In-memory OTP storage (for development - replace with database in production)
 const otpStore = new Map();
@@ -212,15 +250,18 @@ router.post('/verify-otp', [
 // 3. Complete user registration
 router.post('/register', [
     body('phone').isLength({ min: 10, max: 10 }).withMessage('Phone number must be 10 digits'),
-    body('fullName').isLength({ min: 2 }).withMessage('Full name is required'),
+    body('full_name').isLength({ min: 2 }).withMessage('Full name is required'),
     body('email').isEmail().withMessage('Valid email is required'),
     body('age').isInt({ min: 1, max: 120 }).withMessage('Valid age is required'),
     body('pincode').isLength({ min: 6, max: 6 }).withMessage('Pincode must be 6 digits'),
     body('address').isLength({ min: 10 }).withMessage('Address is required')
 ], async (req, res) => {
     try {
+        console.log('Registration request received:', req.body);
+        
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
+            console.log('Validation errors:', errors.array());
             return res.status(400).json({ 
                 success: false, 
                 message: 'Validation error', 
@@ -228,10 +269,12 @@ router.post('/register', [
             });
         }
 
-        const { phone, fullName, email, age, pincode, address, profilePhoto } = req.body;
+        const { phone, full_name, email, age, pincode, address, profilePhoto } = req.body;
+        console.log('Extracted data:', { phone, full_name, email, age, pincode, address });
 
         // Validate Indian phone number
         if (!validateIndianPhone(phone)) {
+            console.log('Invalid phone number:', phone);
             return res.status(400).json({
                 success: false,
                 message: 'Please enter a valid 10-digit Indian mobile number'
@@ -240,8 +283,8 @@ router.post('/register', [
 
         // Check if user already exists
         db.get(
-            'SELECT id FROM users WHERE phone = ?',
-            [phone],
+            'SELECT id FROM users WHERE phone = ? OR email = ?',
+            [phone, email],
             (err, existingUser) => {
                 if (err) {
                     console.error('Error checking existing user:', err);
@@ -252,16 +295,40 @@ router.post('/register', [
                 }
 
                 if (existingUser) {
-                    return res.status(400).json({
-                        success: false,
-                        message: 'User already exists with this phone number'
-                    });
+                    // Check which field is duplicate
+                    db.get(
+                        'SELECT phone, email FROM users WHERE phone = ? OR email = ?',
+                        [phone, email],
+                        (err, userDetails) => {
+                            if (err) {
+                                console.error('Error getting user details:', err);
+                                return res.status(500).json({
+                                    success: false,
+                                    message: 'Internal server error'
+                                });
+                            }
+
+                            let errorMessage = 'User already exists';
+                            if (userDetails.phone === phone) {
+                                errorMessage = 'A user with this phone number already exists';
+                            } else if (userDetails.email === email) {
+                                errorMessage = 'A user with this email address already exists';
+                            }
+
+                            console.log('User already exists:', { phone, email, existing: userDetails });
+                            return res.status(400).json({
+                                success: false,
+                                message: errorMessage
+                            });
+                        }
+                    );
+                    return;
                 }
 
                 // Create new user
                 db.run(
                     'INSERT INTO users (phone, full_name, email, age, pincode, address, profile_photo) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [phone, fullName, email, age, pincode, address, profilePhoto || null],
+                    [phone, full_name, email, age, pincode, address, profilePhoto || null],
                     function(err) {
                         if (err) {
                             console.error('Error creating user:', err);
@@ -270,6 +337,8 @@ router.post('/register', [
                                 message: 'Failed to create user account'
                             });
                         }
+
+                        console.log('User created successfully with ID:', this.lastID);
 
                         // Generate JWT token
                         const token = jwt.sign(
@@ -289,7 +358,7 @@ router.post('/register', [
                                 user: {
                                     id: this.lastID,
                                     phone,
-                                    fullName,
+                                    fullName: full_name,
                                     email,
                                     age,
                                     pincode,
@@ -462,6 +531,107 @@ router.get('/profile', async (req, res) => {
         }
         
         console.error('Get profile error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
+// 6. Update user profile photo
+router.post('/profile/photo', authenticateToken, requireUser, upload.single('profile_photo'), (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'No profile photo uploaded'
+            });
+        }
+
+        const photoUrl = `/uploads/profile-photos/${req.file.filename}`;
+
+        db.run(
+            'UPDATE users SET profile_photo = ? WHERE id = ?',
+            [photoUrl, req.user.userId],
+            function(err) {
+                if (err) {
+                    console.error('Error updating profile photo:', err);
+                    return res.status(500).json({
+                        success: false,
+                        message: 'Failed to update profile photo'
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Profile photo updated successfully',
+                    data: {
+                        profilePhoto: photoUrl
+                    }
+                });
+            }
+        );
+
+    } catch (error) {
+        console.error('Profile photo update error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
+// 7. Update user profile
+router.put('/profile', authenticateToken, requireUser, [
+    body('fullName').isLength({ min: 2 }).withMessage('Full name is required'),
+    body('email').isEmail().withMessage('Valid email is required'),
+    body('age').isInt({ min: 1, max: 120 }).withMessage('Valid age is required'),
+    body('pincode').isLength({ min: 6, max: 6 }).withMessage('Pincode must be 6 digits'),
+    body('address').isLength({ min: 10 }).withMessage('Address is required')
+], async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Validation error', 
+                errors: errors.array() 
+            });
+        }
+
+        const { fullName, email, age, pincode, address } = req.body;
+
+        db.run(
+            'UPDATE users SET full_name = ?, email = ?, age = ?, pincode = ?, address = ? WHERE id = ?',
+            [fullName, email, age, pincode, address, req.user.userId],
+            function(err) {
+                if (err) {
+                    console.error('Error updating profile:', err);
+                    return res.status(500).json({
+                        success: false,
+                        message: 'Failed to update profile'
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Profile updated successfully',
+                    data: {
+                        user: {
+                            id: req.user.userId,
+                            fullName,
+                            email,
+                            age,
+                            pincode,
+                            address
+                        }
+                    }
+                });
+            }
+        );
+
+    } catch (error) {
+        console.error('Profile update error:', error);
         res.status(500).json({
             success: false,
             message: 'Internal server error'

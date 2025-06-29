@@ -8,7 +8,8 @@ import {
   Image,
   Dimensions,
   RefreshControl,
-  Alert
+  Alert,
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -117,7 +118,7 @@ export default function HomeScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.promotionalScroll}
+              contentContainerStyle={styles.cardsContainer}
             >
               {promotionalCards.map((card) => (
                 <TouchableOpacity
@@ -126,15 +127,15 @@ export default function HomeScreen() {
                   onPress={() => handleCardPress(card)}
                 >
                   {card.imageUrl && (
-        <Image
+                    <Image
                       source={{ uri: `http://localhost:3000/${card.imageUrl}` }}
-                      style={styles.promotionalImage}
+                      style={styles.cardImage}
                       resizeMode="cover"
                     />
                   )}
-                  <View style={styles.promotionalContent}>
-                    <Text style={styles.promotionalTitle}>{card.title}</Text>
-                    <Text style={styles.promotionalDescription}>{card.description}</Text>
+                  <View style={styles.cardContent}>
+                    <Text style={styles.cardTitle}>{card.title}</Text>
+                    <Text style={styles.cardDescription}>{card.description}</Text>
                     {card.externalLink && (
                       <View style={styles.externalLinkIndicator}>
                         <Ionicons name="open-outline" size={16} color="#FFD11E" />
@@ -151,49 +152,49 @@ export default function HomeScreen() {
         {/* Quick Actions Section */}
         <View style={styles.quickActionsSection}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.quickActionsGrid}>
+          <View style={styles.actionsGrid}>
             <TouchableOpacity
-              style={styles.quickActionCard}
+              style={styles.actionCard}
               onPress={() => handleFeaturePress('repair')}
             >
-              <View style={styles.quickActionIcon}>
+              <View style={styles.actionIcon}>
                 <Ionicons name="construct" size={32} color="#FFD11E" />
               </View>
-              <Text style={styles.quickActionTitle}>Book Repair</Text>
-              <Text style={styles.quickActionSubtitle}>Professional bicycle repair services</Text>
+              <Text style={styles.actionTitle}>Book Repair</Text>
+              <Text style={styles.actionSubtitle}>Professional bicycle repair services</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.quickActionCard}
+              style={styles.actionCard}
               onPress={() => handleFeaturePress('rental')}
             >
-              <View style={styles.quickActionIcon}>
+              <View style={styles.actionIcon}>
                 <Ionicons name="bicycle" size={32} color="#FFD11E" />
               </View>
-              <Text style={styles.quickActionTitle}>Rent Bicycle</Text>
-              <Text style={styles.quickActionSubtitle}>Quality bicycles for rent</Text>
+              <Text style={styles.actionTitle}>Rent Bicycle</Text>
+              <Text style={styles.actionSubtitle}>Quality bicycles for rent</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.quickActionCard}
+              style={styles.actionCard}
               onPress={() => handleFeaturePress('requests')}
             >
-              <View style={styles.quickActionIcon}>
+              <View style={styles.actionIcon}>
                 <Ionicons name="list" size={32} color="#FFD11E" />
               </View>
-              <Text style={styles.quickActionTitle}>My Requests</Text>
-              <Text style={styles.quickActionSubtitle}>Track your bookings</Text>
+              <Text style={styles.actionTitle}>My Requests</Text>
+              <Text style={styles.actionSubtitle}>Track your bookings</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.quickActionCard}
+              style={styles.actionCard}
               onPress={() => handleFeaturePress('profile')}
             >
-              <View style={styles.quickActionIcon}>
+              <View style={styles.actionIcon}>
                 <Ionicons name="person" size={32} color="#FFD11E" />
               </View>
-              <Text style={styles.quickActionTitle}>Profile</Text>
-              <Text style={styles.quickActionSubtitle}>Manage your account</Text>
+              <Text style={styles.actionTitle}>Profile</Text>
+              <Text style={styles.actionSubtitle}>Manage your account</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -202,39 +203,41 @@ export default function HomeScreen() {
         <View style={styles.servicesSection}>
           <Text style={styles.sectionTitle}>Our Services</Text>
           
-          <View style={styles.serviceCard}>
-            <View style={styles.serviceIcon}>
-              <Ionicons name="construct" size={24} color="#FFD11E" />
+          <View style={styles.serviceCards}>
+            <View style={styles.serviceCard}>
+              <View style={styles.serviceIcon}>
+                <Ionicons name="construct" size={24} color="#FFD11E" />
+              </View>
+              <View style={styles.serviceContent}>
+                <Text style={styles.serviceTitle}>Professional Repair Services</Text>
+                <Text style={styles.serviceDescription}>
+                  Expert mechanics provide comprehensive bicycle repair and maintenance services
+                </Text>
+              </View>
             </View>
-            <View style={styles.serviceContent}>
-              <Text style={styles.serviceTitle}>Professional Repair Services</Text>
-              <Text style={styles.serviceDescription}>
-                Expert mechanics provide comprehensive bicycle repair and maintenance services
-              </Text>
-            </View>
-          </View>
 
-          <View style={styles.serviceCard}>
-            <View style={styles.serviceIcon}>
-              <Ionicons name="bicycle" size={24} color="#FFD11E" />
+            <View style={styles.serviceCard}>
+              <View style={styles.serviceIcon}>
+                <Ionicons name="bicycle" size={24} color="#FFD11E" />
+              </View>
+              <View style={styles.serviceContent}>
+                <Text style={styles.serviceTitle}>Quality Bicycle Rentals</Text>
+                <Text style={styles.serviceDescription}>
+                  Well-maintained bicycles available for daily and weekly rentals
+                </Text>
+              </View>
             </View>
-            <View style={styles.serviceContent}>
-              <Text style={styles.serviceTitle}>Quality Bicycle Rentals</Text>
-              <Text style={styles.serviceDescription}>
-                Well-maintained bicycles available for daily and weekly rentals
-              </Text>
-            </View>
-          </View>
 
-          <View style={styles.serviceCard}>
-            <View style={styles.serviceIcon}>
-              <Ionicons name="car" size={24} color="#FFD11E" />
-            </View>
-            <View style={styles.serviceContent}>
-              <Text style={styles.serviceTitle}>Home Delivery</Text>
-              <Text style={styles.serviceDescription}>
-                Convenient delivery and pickup services for rentals and repairs
-              </Text>
+            <View style={styles.serviceCard}>
+              <View style={styles.serviceIcon}>
+                <Ionicons name="car" size={24} color="#FFD11E" />
+              </View>
+              <View style={styles.serviceContent}>
+                <Text style={styles.serviceTitle}>Home Delivery</Text>
+                <Text style={styles.serviceDescription}>
+                  Convenient delivery and pickup services for rentals and repairs
+                </Text>
+              </View>
             </View>
           </View>
         </View>
@@ -295,42 +298,49 @@ const styles = StyleSheet.create({
     color: '#2D3E50',
     marginBottom: 15,
   },
-  promotionalScroll: {
+  cardsContainer: {
     paddingRight: 20,
   },
   promotionalCard: {
-    width: width * 0.8,
+    width: 300,
     backgroundColor: '#fff',
     borderRadius: 12,
     marginRight: 15,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
   },
-  promotionalImage: {
+  cardImage: {
     width: '100%',
     height: 150,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
-  promotionalContent: {
+  cardContent: {
     padding: 15,
   },
-  promotionalTitle: {
-    fontSize: 18,
+  cardTitle: {
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#2D3E50',
-    marginBottom: 8,
+    marginBottom: 5,
   },
-  promotionalDescription: {
+  cardDescription: {
     fontSize: 14,
     color: '#4A4A4A',
     lineHeight: 20,
-    marginBottom: 10,
   },
   externalLinkIndicator: {
     flexDirection: 'row',
@@ -345,44 +355,51 @@ const styles = StyleSheet.create({
   quickActionsSection: {
     padding: 20,
   },
-  quickActionsGrid: {
+  actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
-  quickActionCard: {
-    width: (width - 60) / 2,
+  actionCard: {
+    width: '48%',
     backgroundColor: '#fff',
-    borderRadius: 12,
     padding: 20,
+    borderRadius: 12,
     marginBottom: 15,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
   },
-  quickActionIcon: {
+  actionIcon: {
     width: 60,
     height: 60,
-    borderRadius: 30,
     backgroundColor: '#FFF5CC',
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 10,
   },
-  quickActionTitle: {
+  actionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#2D3E50',
     marginBottom: 5,
     textAlign: 'center',
   },
-  quickActionSubtitle: {
+  actionSubtitle: {
     fontSize: 12,
     color: '#4A4A4A',
     textAlign: 'center',
@@ -391,20 +408,30 @@ const styles = StyleSheet.create({
   servicesSection: {
     padding: 20,
   },
+  serviceCards: {
+    gap: 15,
+  },
   serviceCard: {
-    flexDirection: 'row',
     backgroundColor: '#fff',
-    borderRadius: 12,
     padding: 20,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
   },
   serviceIcon: {
     width: 50,
@@ -422,11 +449,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#2D3E50',
-    marginBottom: 8,
+    marginLeft: 15,
+    flex: 1,
   },
   serviceDescription: {
     fontSize: 14,
     color: '#4A4A4A',
+    marginLeft: 15,
+    flex: 2,
     lineHeight: 20,
   },
   contactSection: {

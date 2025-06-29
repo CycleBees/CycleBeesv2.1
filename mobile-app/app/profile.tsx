@@ -8,11 +8,14 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
-  Image
+  Image,
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 
 interface User {
   id: number;
@@ -27,7 +30,8 @@ interface User {
   last_login: string;
 }
 
-export default function ProfileScreen({ navigation }: any) {
+export default function ProfileScreen() {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -46,7 +50,7 @@ export default function ProfileScreen({ navigation }: any) {
   const fetchUserProfile = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('userToken');
+      const token = await AsyncStorage.getItem('userToken');
       const response = await fetch('http://localhost:3000/api/auth/profile', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -88,7 +92,7 @@ export default function ProfileScreen({ navigation }: any) {
   const uploadProfilePhoto = async (imageUri: string) => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('userToken');
+      const token = await AsyncStorage.getItem('userToken');
       const formData = new FormData();
       
       formData.append('profile_photo', {
@@ -127,7 +131,7 @@ export default function ProfileScreen({ navigation }: any) {
 
     try {
       setLoading(true);
-      const token = localStorage.getItem('userToken');
+      const token = await AsyncStorage.getItem('userToken');
       const response = await fetch('http://localhost:3000/api/auth/profile', {
         method: 'PUT',
         headers: {
@@ -167,9 +171,31 @@ export default function ProfileScreen({ navigation }: any) {
         {
           text: 'Logout',
           style: 'destructive',
-          onPress: () => {
-            localStorage.removeItem('userToken');
-            navigation.navigate('Login');
+          onPress: async () => {
+            try {
+              console.log('Logging out from profile...');
+              
+              // Clear all storage
+              await AsyncStorage.clear();
+              console.log('All storage cleared');
+              
+              // Platform-specific navigation
+              if (Platform.OS === 'web') {
+                // Force page reload for web
+                window.location.href = '/login';
+                console.log('Web: Reloaded to login page');
+              } else {
+                // Use router for native
+                setTimeout(() => {
+                  router.push('/login');
+                  console.log('Native: Navigated to login');
+                }, 100);
+              }
+              
+            } catch (error) {
+              console.error('Logout error:', error);
+              Alert.alert('Error', 'Failed to logout. Please try again.');
+            }
           }
         }
       ]
@@ -204,7 +230,7 @@ export default function ProfileScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#2D3E50" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
@@ -215,19 +241,19 @@ export default function ProfileScreen({ navigation }: any) {
 
       <ScrollView style={styles.scrollView}>
         {/* Profile Photo Section */}
-        <View style={styles.photoSection}>
-          <View style={styles.photoContainer}>
+        <View style={styles.profileSection}>
+          <View style={styles.profileImageContainer}>
             {user.profile_photo ? (
               <Image
                 source={{ uri: `http://localhost:3000/${user.profile_photo}` }}
-                style={styles.profilePhoto}
+                style={styles.profileImage}
               />
             ) : (
-              <View style={styles.photoPlaceholder}>
+              <View style={styles.profileImagePlaceholder}>
                 <Ionicons name="person" size={60} color="#4A4A4A" />
               </View>
             )}
-            <TouchableOpacity style={styles.editPhotoButton} onPress={pickImage}>
+            <TouchableOpacity style={styles.editImageButton} onPress={pickImage}>
               <Ionicons name="camera" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -249,112 +275,108 @@ export default function ProfileScreen({ navigation }: any) {
         </View>
 
         {/* Profile Information */}
-        <View style={styles.infoSection}>
+        <View style={styles.formSection}>
           <Text style={styles.sectionTitle}>Personal Information</Text>
           
-          <View style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Full Name</Text>
-              {editing ? (
-                <TextInput
-                  style={styles.editInput}
-                  value={editData.full_name}
-                  onChangeText={(text) => setEditData({...editData, full_name: text})}
-                  placeholder="Enter full name"
-                />
-              ) : (
-                <Text style={styles.infoValue}>{user.full_name}</Text>
-              )}
-            </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Full Name</Text>
+            {editing ? (
+              <TextInput
+                style={styles.input}
+                value={editData.full_name}
+                onChangeText={(text) => setEditData({...editData, full_name: text})}
+                placeholder="Enter full name"
+              />
+            ) : (
+              <Text style={styles.input}>{user.full_name}</Text>
+            )}
+          </View>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Email</Text>
-              {editing ? (
-                <TextInput
-                  style={styles.editInput}
-                  value={editData.email}
-                  onChangeText={(text) => setEditData({...editData, email: text})}
-                  placeholder="Enter email"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              ) : (
-                <Text style={styles.infoValue}>{user.email}</Text>
-              )}
-            </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Email</Text>
+            {editing ? (
+              <TextInput
+                style={styles.input}
+                value={editData.email}
+                onChangeText={(text) => setEditData({...editData, email: text})}
+                placeholder="Enter email"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            ) : (
+              <Text style={styles.input}>{user.email}</Text>
+            )}
+          </View>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Phone</Text>
-              <Text style={styles.infoValue}>{user.phone}</Text>
-            </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Phone</Text>
+            <Text style={styles.input}>{user.phone}</Text>
+          </View>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Age</Text>
-              {editing ? (
-                <TextInput
-                  style={styles.editInput}
-                  value={editData.age}
-                  onChangeText={(text) => setEditData({...editData, age: text})}
-                  placeholder="Enter age"
-                  keyboardType="number-pad"
-                />
-              ) : (
-                <Text style={styles.infoValue}>{user.age} years</Text>
-              )}
-            </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Age</Text>
+            {editing ? (
+              <TextInput
+                style={styles.input}
+                value={editData.age}
+                onChangeText={(text) => setEditData({...editData, age: text})}
+                placeholder="Enter age"
+                keyboardType="number-pad"
+              />
+            ) : (
+              <Text style={styles.input}>{user.age} years</Text>
+            )}
+          </View>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Pincode</Text>
-              {editing ? (
-                <TextInput
-                  style={styles.editInput}
-                  value={editData.pincode}
-                  onChangeText={(text) => setEditData({...editData, pincode: text})}
-                  placeholder="Enter pincode"
-                  keyboardType="number-pad"
-                  maxLength={6}
-                />
-              ) : (
-                <Text style={styles.infoValue}>{user.pincode}</Text>
-              )}
-            </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Pincode</Text>
+            {editing ? (
+              <TextInput
+                style={styles.input}
+                value={editData.pincode}
+                onChangeText={(text) => setEditData({...editData, pincode: text})}
+                placeholder="Enter pincode"
+                keyboardType="number-pad"
+                maxLength={6}
+              />
+            ) : (
+              <Text style={styles.input}>{user.pincode}</Text>
+            )}
+          </View>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Address</Text>
-              {editing ? (
-                <TextInput
-                  style={[styles.editInput, styles.addressInput]}
-                  value={editData.address}
-                  onChangeText={(text) => setEditData({...editData, address: text})}
-                  placeholder="Enter address"
-                  multiline
-                  numberOfLines={3}
-                />
-              ) : (
-                <Text style={styles.infoValue}>{user.address}</Text>
-              )}
-            </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Address</Text>
+            {editing ? (
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={editData.address}
+                onChangeText={(text) => setEditData({...editData, address: text})}
+                placeholder="Enter address"
+                multiline
+                numberOfLines={3}
+              />
+            ) : (
+              <Text style={styles.input}>{user.address}</Text>
+            )}
           </View>
         </View>
 
         {/* Account Information */}
-        <View style={styles.infoSection}>
+        <View style={styles.formSection}>
           <Text style={styles.sectionTitle}>Account Information</Text>
           
-          <View style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Member Since</Text>
-              <Text style={styles.infoValue}>
-                {new Date(user.created_at).toLocaleDateString()}
-              </Text>
-            </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Member Since</Text>
+            <Text style={styles.input}>
+              {new Date(user.created_at).toLocaleDateString()}
+            </Text>
+          </View>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Last Login</Text>
-              <Text style={styles.infoValue}>
-                {user.last_login ? new Date(user.last_login).toLocaleString() : 'Never'}
-              </Text>
-            </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Last Login</Text>
+            <Text style={styles.input}>
+              {user.last_login ? new Date(user.last_login).toLocaleString() : 'Never'}
+            </Text>
           </View>
         </View>
 
@@ -370,7 +392,6 @@ export default function ProfileScreen({ navigation }: any) {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <>
-                  <Ionicons name="checkmark" size={20} color="#fff" />
                   <Text style={styles.saveButtonText}>Save Changes</Text>
                 </>
               )}
@@ -387,70 +408,46 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  loadingContainer: {
+  scrollView: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#4A4A4A',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorText: {
-    fontSize: 18,
-    color: '#4A4A4A',
-    marginTop: 20,
-    marginBottom: 30,
-  },
-  retryButton: {
-    backgroundColor: '#FFD11E',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#2D3E50',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
   header: {
+    backgroundColor: '#FFD11E',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+  },
+  headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#FFD11E',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#2D3E50',
   },
-  scrollView: {
+  backButton: {
+    padding: 8,
+  },
+  content: {
     flex: 1,
+    padding: 20,
   },
-  photoSection: {
+  profileSection: {
     alignItems: 'center',
-    padding: 30,
-    backgroundColor: '#fff',
-    marginBottom: 20,
+    marginBottom: 30,
   },
-  photoContainer: {
+  profileImageContainer: {
     position: 'relative',
     marginBottom: 15,
   },
-  profilePhoto: {
+  profileImage: {
     width: 120,
     height: 120,
     borderRadius: 60,
+    backgroundColor: '#FFF5CC',
   },
-  photoPlaceholder: {
+  profileImagePlaceholder: {
     width: 120,
     height: 120,
     borderRadius: 60,
@@ -458,18 +455,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  editPhotoButton: {
+  editImageButton: {
     position: 'absolute',
     bottom: 0,
     right: 0,
     backgroundColor: '#FFD11E',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    borderRadius: 20,
+    width: 40,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#fff',
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
   },
   userName: {
     fontSize: 24,
@@ -508,61 +518,54 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#2D3E50',
   },
-  infoSection: {
-    paddingHorizontal: 20,
+  formSection: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
     marginBottom: 20,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#2D3E50',
-    marginBottom: 15,
+    marginBottom: 20,
   },
-  infoCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+  inputContainer: {
+    marginBottom: 20,
   },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  infoLabel: {
+  inputLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#4A4A4A',
-    flex: 1,
-  },
-  infoValue: {
-    fontSize: 16,
     color: '#2D3E50',
-    flex: 2,
-    textAlign: 'right',
+    marginBottom: 8,
   },
-  editInput: {
-    flex: 2,
+  input: {
     backgroundColor: '#f8f9fa',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 6,
-    padding: 8,
+    borderColor: '#e9ecef',
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
     fontSize: 16,
     color: '#2D3E50',
   },
-  addressInput: {
-    height: 60,
+  textArea: {
+    height: 80,
     textAlignVertical: 'top',
   },
   saveSection: {
@@ -571,13 +574,10 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     backgroundColor: '#28a745',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     paddingVertical: 15,
-    paddingHorizontal: 20,
     borderRadius: 10,
-    gap: 10,
+    alignItems: 'center',
+    marginTop: 10,
   },
   saveButtonText: {
     color: '#fff',
@@ -586,5 +586,38 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#4A4A4A',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 18,
+    color: '#4A4A4A',
+    marginTop: 20,
+    marginBottom: 30,
+  },
+  retryButton: {
+    backgroundColor: '#FFD11E',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#2D3E50',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 }); 
