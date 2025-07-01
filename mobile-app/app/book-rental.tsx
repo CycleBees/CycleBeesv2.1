@@ -9,7 +9,9 @@ import {
   Alert,
   ActivityIndicator,
   Image,
-  Dimensions
+  Dimensions,
+  Platform,
+  Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +22,7 @@ interface Bicycle {
   id: number;
   name: string;
   model: string;
+  description: string;
   special_instructions: string;
   daily_rate: number;
   weekly_rate: number;
@@ -28,98 +31,163 @@ interface Bicycle {
   photos: string[];
 }
 
+interface User {
+  id: number;
+  full_name: string;
+  email: string;
+  phone: string;
+  address?: string;
+}
+
 const { width } = Dimensions.get('window');
 
 export default function BookRentalScreen() {
   const router = useRouter();
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState<'bicycles' | 'details' | 'summary'>('bicycles');
   const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const [bicycles, setBicycles] = useState<Bicycle[]>([]);
+  
+  // Form data
   const [selectedBicycle, setSelectedBicycle] = useState<Bicycle | null>(null);
-  const [bookingData, setBookingData] = useState({
-    duration_type: 'daily',
-    duration: 1,
-    contact_number: '',
+  const [formData, setFormData] = useState({
     alternate_number: '',
+    email: '',
     delivery_address: '',
     special_instructions: '',
-    payment_method: 'online'
+    duration_type: 'daily' as 'daily' | 'weekly',
+    duration: 1
   });
+
+  const [coupon, setCoupon] = useState('');
+  const [couponError, setCouponError] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
-  const [couponCode, setCouponCode] = useState('');
+  const [discount, setDiscount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState<'online' | 'offline'>('online');
 
   useEffect(() => {
+    fetchUserProfile();
     fetchBicycles();
   }, []);
 
-  const fetchBicycles = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('http://localhost:3000/api/rental/bicycles');
-      if (response.ok) {
-        const data = await response.json();
-        setBicycles(data);
-      }
-    } catch (error) {
-      console.error('Error fetching bicycles:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const applyCoupon = async () => {
-    if (!couponCode.trim()) {
-      Alert.alert('Error', 'Please enter a coupon code');
-      return;
-    }
-
+  const fetchUserProfile = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const response = await fetch('http://localhost:3000/api/coupon/apply', {
-        method: 'POST',
+      const response = await fetch('http://localhost:3000/api/auth/profile', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          coupon_code: couponCode,
-          amount: calculateTotal(),
-          item_type: 'rental_bicycles'
-        })
+        }
       });
 
       if (response.ok) {
         const data = await response.json();
-        setAppliedCoupon(data);
-        Alert.alert('Success', `Coupon applied! Discount: ₹${data.discount_amount}`);
-      } else {
-        const error = await response.json();
-        Alert.alert('Error', error.message || 'Invalid coupon code');
+        setUser(data.data.user);
+        setFormData(prev => ({
+          ...prev,
+          email: data.data.user.email,
+          delivery_address: data.data.user.address || ''
+        }));
       }
     } catch (error) {
-      Alert.alert('Error', 'Network error. Please try again.');
+      console.error('Error fetching user profile:', error);
     }
   };
 
-  const calculateRentalCost = () => {
-    if (!selectedBicycle) return 0;
-    const rate = bookingData.duration_type === 'daily' 
-      ? selectedBicycle.daily_rate 
-      : selectedBicycle.weekly_rate;
-    return rate * bookingData.duration;
+  const fetchBicycles = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/rental/bicycles');
+      if (response.ok) {
+        const data = await response.json();
+        setBicycles(data.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching bicycles:', error);
+    }
   };
 
   const calculateTotal = () => {
-    const rentalCost = calculateRentalCost();
-    const deliveryCharge = selectedBicycle?.delivery_charge || 0;
-    const subtotal = rentalCost + deliveryCharge;
-    
-    if (appliedCoupon) {
-      const discount = appliedCoupon.discount_amount;
-      return Math.max(0, subtotal - discount);
+    if (!selectedBicycle) return 0;
+    const baseRate = formData.duration_type === 'daily' 
+      ? selectedBicycle.daily_rate 
+      : selectedBicycle.weekly_rate;
+    const total = (baseRate * formData.duration) + selectedBicycle.delivery_charge;
+    return total;
+  };
+
+  const applyCoupon = async () => {
+    setCouponError('');
+    setDiscount(0);
+    setAppliedCoupon(null);
+    if (!coupon.trim()) {
+      setCouponError('Please enter a coupon code');
+      return;
     }
-    
-    return subtotal;
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        setCouponError('Please login first');
+        return;
+      }
+      
+      // Prepare items array for rental
+      const items = ['rental_services', 'delivery_charge'];
+      const totalAmount = calculateTotal();
+      
+      const response = await fetch('http://localhost:3000/api/coupon/apply', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          code: coupon, 
+          requestType: 'rental',
+          items: items,
+          totalAmount: totalAmount
+        })
+      });
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        setAppliedCoupon(data.data);
+        setDiscount(data.data.discount || 0);
+        setCouponError('');
+      } else {
+        setCouponError(data.message || 'Invalid coupon');
+      }
+    } catch (error) {
+      console.error('Coupon apply error:', error);
+      setCouponError('Network error. Please try again.');
+    }
+  };
+
+  const calculateTotalWithDiscount = () => {
+    const total = calculateTotal();
+    if (appliedCoupon) {
+      if (appliedCoupon.discountType === 'percentage') {
+        const discount = (total * appliedCoupon.discountValue) / 100;
+        return Math.max(total - discount, 0);
+      } else {
+        return Math.max(total - appliedCoupon.discountValue, 0);
+      }
+    }
+    return total;
+  };
+
+  const handleDurationChange = (type: 'daily' | 'weekly') => {
+    setFormData(prev => ({
+      ...prev,
+      duration_type: type,
+      duration: 1 // Reset to 1 when changing type
+    }));
+  };
+
+  const handleDurationCountChange = (count: number) => {
+    setFormData(prev => ({
+      ...prev,
+      duration: count
+    }));
   };
 
   const handleSubmit = async () => {
@@ -127,15 +195,41 @@ export default function BookRentalScreen() {
       Alert.alert('Error', 'Please select a bicycle');
       return;
     }
-
-    if (!bookingData.delivery_address.trim()) {
+    if (!formData.delivery_address.trim()) {
       Alert.alert('Error', 'Please enter delivery address');
       return;
     }
-
+    
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
+      const formDataToSend = new FormData();
+      
+      // Add form fields
+      formDataToSend.append('bicycleId', selectedBicycle.id.toString());
+      formDataToSend.append('contactNumber', user?.phone || '');
+      formDataToSend.append('alternateNumber', formData.alternate_number || '');
+      formDataToSend.append('email', formData.email || '');
+      formDataToSend.append('deliveryAddress', formData.delivery_address);
+      formDataToSend.append('specialInstructions', formData.special_instructions || '');
+      formDataToSend.append('durationType', formData.duration_type);
+      formDataToSend.append('durationCount', formData.duration.toString());
+      formDataToSend.append('paymentMethod', paymentMethod);
+      formDataToSend.append('totalAmount', calculateTotalWithDiscount().toString());
+      
+      console.log('Submitting rental request with data:', {
+        bicycleId: selectedBicycle.id,
+        contactNumber: user?.phone,
+        alternateNumber: formData.alternate_number,
+        email: formData.email,
+        deliveryAddress: formData.delivery_address,
+        specialInstructions: formData.special_instructions,
+        durationType: formData.duration_type,
+        durationCount: formData.duration,
+        paymentMethod: paymentMethod,
+        totalAmount: calculateTotalWithDiscount()
+      });
+      
       const response = await fetch('http://localhost:3000/api/rental/requests', {
         method: 'POST',
         headers: {
@@ -143,211 +237,217 @@ export default function BookRentalScreen() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          bicycle_id: selectedBicycle.id,
-          duration_type: bookingData.duration_type,
-          duration: bookingData.duration,
-          contact_number: bookingData.contact_number,
-          alternate_number: bookingData.alternate_number,
-          delivery_address: bookingData.delivery_address,
-          special_instructions: bookingData.special_instructions,
-          payment_method: bookingData.payment_method,
-          coupon_code: appliedCoupon?.code || null
+          bicycleId: selectedBicycle.id,
+          contactNumber: user?.phone,
+          alternateNumber: formData.alternate_number,
+          email: formData.email,
+          deliveryAddress: formData.delivery_address,
+          specialInstructions: formData.special_instructions,
+          durationType: formData.duration_type,
+          durationCount: formData.duration,
+          paymentMethod: paymentMethod,
+          totalAmount: calculateTotalWithDiscount()
         })
       });
-
-      if (response.ok) {
+      
+      console.log('Response status:', response.status);
+      
+      const data = await response.json();
+      console.log('Response data:', data);
+      
+      if (response.ok && data.success) {
+        console.log('Rental request submitted successfully');
+        
+        // Reset loading state first
+        setLoading(false);
+        
+        // Show success message briefly, then navigate
         Alert.alert(
-          'Success',
-          'Rental request submitted successfully! You will be notified once admin approves.',
-          [{ text: 'OK', onPress: () => router.push('/my-requests') }]
+          'Success!', 
+          'Rental request submitted successfully! Redirecting to My Requests...',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Smooth transition to My Requests
+                router.replace('/my-requests');
+              }
+            }
+          ]
         );
+        
       } else {
-        const error = await response.json();
-        Alert.alert('Error', error.message || 'Failed to submit request');
+        console.error('Backend error:', data);
+        const errorMessage = data.message || 'Failed to submit rental request';
+        Alert.alert('Error', errorMessage);
+        setLoading(false);
       }
     } catch (error) {
+      console.error('Network error:', error);
       Alert.alert('Error', 'Network error. Please try again.');
-    } finally {
       setLoading(false);
     }
   };
 
-  const renderStep1 = () => (
+  const renderBicyclesStep = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Step 1: Select Bicycle</Text>
+      <Text style={styles.stepTitle}>Select Bicycle</Text>
       <Text style={styles.stepSubtitle}>Choose the bicycle you want to rent</Text>
-
+      
       <ScrollView style={styles.bicyclesList}>
-        {bicycles.map((bicycle) => (
-          <TouchableOpacity
-            key={bicycle.id}
-            style={[
-              styles.bicycleCard,
-              selectedBicycle?.id === bicycle.id && styles.selectedBicycleCard
-            ]}
-            onPress={() => setSelectedBicycle(bicycle)}
-          >
-            {bicycle.photos && bicycle.photos.length > 0 && (
-              <Image
-                source={{ uri: `http://localhost:3000/${bicycle.photos[0]}` }}
-                style={styles.bicycleImage}
-                resizeMode="cover"
-              />
-            )}
-            
-            <View style={styles.bicycleInfo}>
-              <View style={styles.bicycleHeader}>
-                <Text style={styles.bicycleName}>{bicycle.name}</Text>
-                <Text style={styles.bicycleModel}>{bicycle.model}</Text>
-              </View>
-              
-              <View style={styles.ratesContainer}>
-                <View style={styles.rateItem}>
-                  <Text style={styles.rateLabel}>Daily Rate:</Text>
-                  <Text style={styles.rateValue}>₹{bicycle.daily_rate}</Text>
+        {bicycles.map((bicycle) => {
+          const isSelected = selectedBicycle?.id === bicycle.id;
+          return (
+            <TouchableOpacity
+              key={bicycle.id}
+              style={[styles.bicycleCard, isSelected && styles.bicycleCardSelected]}
+              onPress={() => setSelectedBicycle(bicycle)}
+            >
+              <View style={styles.bicycleCardContent}>
+                <View style={styles.bicycleCardHeader}>
+                  <Text style={styles.bicycleName}>{bicycle.name}</Text>
+                  <Text style={styles.bicycleModel}>{bicycle.model}</Text>
                 </View>
-                <View style={styles.rateItem}>
-                  <Text style={styles.rateLabel}>Weekly Rate:</Text>
-                  <Text style={styles.rateValue}>₹{bicycle.weekly_rate}</Text>
-                </View>
-                <View style={styles.rateItem}>
-                  <Text style={styles.rateLabel}>Delivery Charge:</Text>
-                  <Text style={styles.rateValue}>₹{bicycle.delivery_charge}</Text>
-                </View>
-              </View>
-
-              {bicycle.special_instructions && (
-                <Text style={styles.specialInstructions}>
-                  Note: {bicycle.special_instructions}
+                
+                <Text style={styles.bicycleDescription} numberOfLines={2}>
+                  {bicycle.description}
                 </Text>
-              )}
-
-              {bicycle.specifications && (
-                <View style={styles.specificationsContainer}>
-                  <Text style={styles.specificationsTitle}>Specifications:</Text>
-                  <Text style={styles.specificationsText}>{bicycle.specifications}</Text>
+                
+                <View style={styles.bicycleRates}>
+                  <Text style={styles.rateText}>Daily: ₹{bicycle.daily_rate}</Text>
+                  <Text style={styles.rateText}>Weekly: ₹{bicycle.weekly_rate}</Text>
+                  <Text style={styles.deliveryText}>Delivery: ₹{bicycle.delivery_charge}</Text>
                 </View>
-              )}
-
-              {selectedBicycle?.id === bicycle.id && (
-                <View style={styles.selectedIndicator}>
-                  <Ionicons name="checkmark-circle" size={20} color="#28a745" />
-                  <Text style={styles.selectedText}>Selected</Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-        ))}
+                
+                {isSelected && (
+                  <View style={styles.selectedIndicator}>
+                    <Ionicons name="checkmark-circle" size={20} color="#28a745" />
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
 
       <View style={styles.stepFooter}>
         <TouchableOpacity
-          style={[styles.nextButton, !selectedBicycle && styles.disabledButton]}
-          onPress={() => setStep(2)}
+          style={[styles.nextButton, !selectedBicycle && styles.buttonDisabled]}
+          onPress={() => setStep('details')}
           disabled={!selectedBicycle}
         >
-          <Text style={styles.nextButtonText}>Next</Text>
+          <Text style={styles.nextButtonText}>Next: Rental Details</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 
-  const renderStep2 = () => (
+  const renderDetailsStep = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Step 2: Rental Details</Text>
-      <Text style={styles.stepSubtitle}>Configure your rental preferences</Text>
-
+      <Text style={styles.stepTitle}>Rental Details</Text>
+      <Text style={styles.stepSubtitle}>Provide rental information</Text>
+      
       <ScrollView style={styles.formContainer}>
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Duration Type</Text>
-          <View style={styles.durationTypeContainer}>
-            <TouchableOpacity
-              style={[
-                styles.durationTypeButton,
-                bookingData.duration_type === 'daily' && styles.selectedDurationType
-              ]}
-              onPress={() => setBookingData({...bookingData, duration_type: 'daily'})}
-            >
-              <Text style={[
-                styles.durationTypeText,
-                bookingData.duration_type === 'daily' && styles.selectedDurationTypeText
-              ]}>
-                Daily
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.durationTypeButton,
-                bookingData.duration_type === 'weekly' && styles.selectedDurationType
-              ]}
-              onPress={() => setBookingData({...bookingData, duration_type: 'weekly'})}
-            >
-              <Text style={[
-                styles.durationTypeText,
-                bookingData.duration_type === 'weekly' && styles.selectedDurationTypeText
-              ]}>
-                Weekly
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Duration ({bookingData.duration_type === 'daily' ? 'Days' : 'Weeks'})</Text>
-          <TextInput
-            style={styles.input}
-            value={bookingData.duration.toString()}
-            onChangeText={(text) => setBookingData({...bookingData, duration: parseInt(text) || 1})}
-            placeholder="1"
-            keyboardType="number-pad"
-          />
+          <Text style={styles.inputLabel}>Selected Bicycle</Text>
+          <Text style={styles.inputValue}>{selectedBicycle?.name}</Text>
         </View>
 
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Contact Number</Text>
-          <TextInput
-            style={styles.input}
-            value={bookingData.contact_number}
-            onChangeText={(text) => setBookingData({...bookingData, contact_number: text})}
-            placeholder="Your contact number"
-            keyboardType="phone-pad"
-          />
+          <Text style={styles.inputValue}>{user?.phone}</Text>
         </View>
 
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Alternate Number (Optional)</Text>
           <TextInput
             style={styles.input}
-            value={bookingData.alternate_number}
-            onChangeText={(text) => setBookingData({...bookingData, alternate_number: text})}
-            placeholder="Alternate contact number"
+            value={formData.alternate_number}
+            onChangeText={(text) => setFormData({...formData, alternate_number: text})}
+            placeholder="Enter alternate number"
             keyboardType="phone-pad"
           />
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Delivery Address *</Text>
+          <Text style={styles.inputLabel}>Email Address</Text>
+          <TextInput
+            style={styles.input}
+            value={formData.email}
+            onChangeText={(text) => setFormData({...formData, email: text})}
+            placeholder="Enter email address"
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Duration Type</Text>
+          <View style={styles.durationTypeContainer}>
+            <TouchableOpacity
+              style={[
+                styles.durationTypeButton,
+                formData.duration_type === 'daily' && styles.durationTypeSelected
+              ]}
+              onPress={() => handleDurationChange('daily')}
+            >
+              <Text style={[
+                styles.durationTypeText,
+                formData.duration_type === 'daily' && styles.durationTypeTextSelected
+              ]}>Daily</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.durationTypeButton,
+                formData.duration_type === 'weekly' && styles.durationTypeSelected
+              ]}
+              onPress={() => handleDurationChange('weekly')}
+            >
+              <Text style={[
+                styles.durationTypeText,
+                formData.duration_type === 'weekly' && styles.durationTypeTextSelected
+              ]}>Weekly</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Duration Count</Text>
+          <View style={styles.durationCountContainer}>
+            <TouchableOpacity
+              style={styles.durationCountButton}
+              onPress={() => handleDurationCountChange(Math.max(1, formData.duration - 1))}
+            >
+              <Ionicons name="remove" size={20} color="#2D3E50" />
+            </TouchableOpacity>
+            <Text style={styles.durationCountText}>{formData.duration}</Text>
+            <TouchableOpacity
+              style={styles.durationCountButton}
+              onPress={() => handleDurationCountChange(formData.duration + 1)}
+            >
+              <Ionicons name="add" size={20} color="#2D3E50" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Delivery Address</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
-            value={bookingData.delivery_address}
-            onChangeText={(text) => setBookingData({...bookingData, delivery_address: text})}
-            placeholder="Enter your complete delivery address"
+            value={formData.delivery_address}
+            onChangeText={(text) => setFormData({...formData, delivery_address: text})}
+            placeholder="Enter delivery address"
             multiline
             numberOfLines={3}
           />
-          {selectedBicycle && (
-            <Text style={styles.deliveryChargeNote}>
-              Delivery Charge: ₹{selectedBicycle.delivery_charge}
-            </Text>
-          )}
         </View>
 
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Special Instructions (Optional)</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
-            value={bookingData.special_instructions}
-            onChangeText={(text) => setBookingData({...bookingData, special_instructions: text})}
+            value={formData.special_instructions}
+            onChangeText={(text) => setFormData({...formData, special_instructions: text})}
             placeholder="Any special instructions or notes"
             multiline
             numberOfLines={3}
@@ -356,141 +456,138 @@ export default function BookRentalScreen() {
       </ScrollView>
 
       <View style={styles.stepFooter}>
-        <TouchableOpacity style={styles.backButton} onPress={() => setStep(1)}>
+        <TouchableOpacity
+          style={styles.stepBackButton}
+          onPress={() => setStep('bicycles')}
+        >
           <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.nextButton} onPress={() => setStep(3)}>
-          <Text style={styles.nextButtonText}>Next</Text>
+        <TouchableOpacity
+          style={[styles.nextButton, !formData.delivery_address.trim() && styles.buttonDisabled]}
+          onPress={() => setStep('summary')}
+          disabled={!formData.delivery_address.trim()}
+        >
+          <Text style={styles.nextButtonText}>Next: Summary</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 
-  const renderStep3 = () => (
+  const renderSummaryStep = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Step 3: Review & Payment</Text>
-      <Text style={styles.stepSubtitle}>Review your rental details and complete payment</Text>
-
-      <ScrollView style={styles.reviewContainer}>
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Selected Bicycle</Text>
-          <View style={styles.reviewItem}>
-            <Text style={styles.reviewItemText}>{selectedBicycle?.name}</Text>
-            <Text style={styles.reviewItemSubtext}>{selectedBicycle?.model}</Text>
-          </View>
+      <Text style={styles.stepTitle}>Rental Summary</Text>
+      <Text style={styles.stepSubtitle}>Review your rental request</Text>
+      
+      <ScrollView style={styles.summaryContainer}>
+        <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Selected Bicycle</Text>
+          <Text style={styles.summaryText}>Name: {selectedBicycle?.name}</Text>
+          <Text style={styles.summaryText}>Model: {selectedBicycle?.model}</Text>
+          <Text style={styles.summaryText}>Description: {selectedBicycle?.description}</Text>
         </View>
 
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Rental Details</Text>
-          <View style={styles.reviewItem}>
-            <Text style={styles.reviewItemLabel}>Duration:</Text>
-            <Text style={styles.reviewItemValue}>
-              {bookingData.duration} {bookingData.duration_type === 'daily' ? 'Day(s)' : 'Week(s)'}
-            </Text>
-          </View>
-          <View style={styles.reviewItem}>
-            <Text style={styles.reviewItemLabel}>Contact:</Text>
-            <Text style={styles.reviewItemValue}>{bookingData.contact_number}</Text>
-          </View>
-          {bookingData.alternate_number && (
-            <View style={styles.reviewItem}>
-              <Text style={styles.reviewItemLabel}>Alternate:</Text>
-              <Text style={styles.reviewItemValue}>{bookingData.alternate_number}</Text>
-            </View>
+        <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Rental Details</Text>
+          <Text style={styles.summaryText}>
+            Duration: {formData.duration} {formData.duration_type === 'daily' ? 'Day(s)' : 'Week(s)'}
+          </Text>
+          <Text style={styles.summaryText}>Rate: ₹{formData.duration_type === 'daily' ? selectedBicycle?.daily_rate : selectedBicycle?.weekly_rate}</Text>
+          <Text style={styles.summaryText}>Delivery Charge: ₹{selectedBicycle?.delivery_charge}</Text>
+        </View>
+
+        <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Contact Information</Text>
+          <Text style={styles.summaryText}>Phone: {user?.phone}</Text>
+          {formData.alternate_number && (
+            <Text style={styles.summaryText}>Alternate: {formData.alternate_number}</Text>
           )}
-          <View style={styles.reviewItem}>
-            <Text style={styles.reviewItemLabel}>Delivery Address:</Text>
-            <Text style={styles.reviewItemValue}>{bookingData.delivery_address}</Text>
-          </View>
+          <Text style={styles.summaryText}>Email: {formData.email}</Text>
         </View>
 
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Cost Breakdown</Text>
-          <View style={styles.reviewItem}>
-            <Text style={styles.reviewItemText}>Rental Cost</Text>
-            <Text style={styles.reviewItemPrice}>₹{calculateRentalCost()}</Text>
-          </View>
-          <View style={styles.reviewItem}>
-            <Text style={styles.reviewItemText}>Delivery Charge</Text>
-            <Text style={styles.reviewItemPrice}>₹{selectedBicycle?.delivery_charge || 0}</Text>
-          </View>
-          {appliedCoupon && (
-            <View style={styles.reviewItem}>
-              <Text style={styles.reviewItemText}>Discount ({appliedCoupon.code})</Text>
-              <Text style={[styles.reviewItemPrice, styles.discountText]}>
-                -₹{appliedCoupon.discount_amount}
-              </Text>
-            </View>
-          )}
-          <View style={styles.totalItem}>
-            <Text style={styles.totalItemText}>Total Amount</Text>
-            <Text style={styles.totalItemPrice}>₹{calculateTotal()}</Text>
-          </View>
+        <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Delivery Address</Text>
+          <Text style={styles.summaryText}>{formData.delivery_address}</Text>
         </View>
 
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Apply Coupon (Optional)</Text>
-          <View style={styles.couponContainer}>
+        {formData.special_instructions && (
+          <View style={styles.summarySection}>
+            <Text style={styles.summarySectionTitle}>Special Instructions</Text>
+            <Text style={styles.summaryText}>{formData.special_instructions}</Text>
+          </View>
+        )}
+
+        <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Coupon</Text>
+          <View style={styles.couponInputContainer}>
             <TextInput
-              style={styles.couponInput}
-              value={couponCode}
-              onChangeText={setCouponCode}
+              style={[styles.input, { flex: 1 }]}
+              value={coupon}
+              onChangeText={setCoupon}
               placeholder="Enter coupon code"
+              autoCapitalize="characters"
             />
             <TouchableOpacity style={styles.applyCouponButton} onPress={applyCoupon}>
               <Text style={styles.applyCouponText}>Apply</Text>
             </TouchableOpacity>
           </View>
+          {couponError ? <Text style={styles.couponError}>{couponError}</Text> : null}
           {appliedCoupon && (
-            <View style={styles.appliedCouponContainer}>
-              <Text style={styles.appliedCouponText}>
-                ✓ {appliedCoupon.code} applied - ₹{appliedCoupon.discount_amount} off
-              </Text>
-              <TouchableOpacity onPress={() => setAppliedCoupon(null)}>
-                <Text style={styles.removeCouponText}>Remove</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.couponSuccess}>
+              Coupon "{appliedCoupon.code}" applied! Discount: ₹{discount}
+            </Text>
           )}
         </View>
 
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Payment Method</Text>
-          <View style={styles.paymentOptions}>
+        <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Payment Method</Text>
+          <View style={styles.paymentOptionsContainer}>
             <TouchableOpacity
-              style={[
-                styles.paymentOption,
-                bookingData.payment_method === 'online' && styles.selectedPaymentOption
-              ]}
-              onPress={() => setBookingData({...bookingData, payment_method: 'online'})}
+              style={[styles.paymentOption, paymentMethod === 'online' && styles.paymentOptionSelected]}
+              onPress={() => setPaymentMethod('online')}
             >
-              <Ionicons name="card-outline" size={20} color="#2D3E50" />
-              <Text style={styles.paymentOptionText}>Online Payment</Text>
+              <Ionicons name={paymentMethod === 'online' ? 'radio-button-on' : 'radio-button-off'} size={20} color="#FFD11E" />
+              <Text style={styles.paymentOptionText}>Online</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[
-                styles.paymentOption,
-                bookingData.payment_method === 'offline' && styles.selectedPaymentOption
-              ]}
-              onPress={() => setBookingData({...bookingData, payment_method: 'offline'})}
+              style={[styles.paymentOption, paymentMethod === 'offline' && styles.paymentOptionSelected]}
+              onPress={() => setPaymentMethod('offline')}
             >
-              <Ionicons name="cash-outline" size={20} color="#2D3E50" />
-              <Text style={styles.paymentOptionText}>Cash Payment</Text>
+              <Ionicons name={paymentMethod === 'offline' ? 'radio-button-on' : 'radio-button-off'} size={20} color="#FFD11E" />
+              <Text style={styles.paymentOptionText}>Offline</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Total Amount</Text>
+          <View style={styles.totalBreakdown}>
+            <Text style={styles.totalItem}>
+              Rental: ₹{selectedBicycle ? (formData.duration_type === 'daily' ? selectedBicycle.daily_rate : selectedBicycle.weekly_rate) * formData.duration : 0}
+            </Text>
+            <Text style={styles.totalItem}>Delivery: ₹{selectedBicycle?.delivery_charge || 0}</Text>
+            {discount > 0 && <Text style={styles.totalItem}>Discount: -₹{discount}</Text>}
+            <Text style={styles.totalAmount}>Total: ₹{calculateTotalWithDiscount()}</Text>
           </View>
         </View>
       </ScrollView>
 
       <View style={styles.stepFooter}>
-        <TouchableOpacity style={styles.backButton} onPress={() => setStep(2)}>
+        <TouchableOpacity
+          style={styles.stepBackButton}
+          onPress={() => setStep('details')}
+        >
           <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.submitButton, loading && styles.disabledButton]}
+          style={[styles.submitButton, loading && styles.buttonDisabled]}
           onPress={handleSubmit}
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#2D3E50" />
+              <Text style={styles.loadingText}>Submitting...</Text>
+            </View>
           ) : (
             <Text style={styles.submitButtonText}>Submit Request</Text>
           )}
@@ -499,36 +596,25 @@ export default function BookRentalScreen() {
     </View>
   );
 
-  if (loading && step === 1) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FFD11E" />
-          <Text style={styles.loadingText}>Loading bicycles...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#2D3E50" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Book Rental</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.placeholder} />
       </View>
 
       <View style={styles.progressBar}>
-        <View style={[styles.progressStep, step >= 1 && styles.activeStep]} />
-        <View style={[styles.progressStep, step >= 2 && styles.activeStep]} />
-        <View style={[styles.progressStep, step >= 3 && styles.activeStep]} />
+        <View style={[styles.progressStep, step === 'bicycles' && styles.progressActive]} />
+        <View style={[styles.progressStep, step === 'details' && styles.progressActive]} />
+        <View style={[styles.progressStep, step === 'summary' && styles.progressActive]} />
       </View>
 
-      {step === 1 && renderStep1()}
-      {step === 2 && renderStep2()}
-      {step === 3 && renderStep3()}
+      {step === 'bicycles' && renderBicyclesStep()}
+      {step === 'details' && renderDetailsStep()}
+      {step === 'summary' && renderSummaryStep()}
     </SafeAreaView>
   );
 }
@@ -536,84 +622,78 @@ export default function BookRentalScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#4A4A4A',
+    backgroundColor: '#fff',
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#FFD11E',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#2D3E50',
   },
+  backButton: {
+    padding: 8,
+  },
+  placeholder: {
+    width: 40,
+  },
   progressBar: {
     flexDirection: 'row',
-    padding: 20,
-    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#f8f9fa',
   },
   progressStep: {
     flex: 1,
     height: 4,
-    backgroundColor: '#e0e0e0',
-    marginHorizontal: 5,
+    backgroundColor: '#dee2e6',
+    marginHorizontal: 4,
     borderRadius: 2,
   },
-  activeStep: {
+  progressActive: {
     backgroundColor: '#FFD11E',
   },
   stepContainer: {
     flex: 1,
-    padding: 20,
+    padding: 16,
   },
   stepTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#2D3E50',
-    marginBottom: 5,
+    marginBottom: 8,
   },
   stepSubtitle: {
     fontSize: 16,
-    color: '#4A4A4A',
-    marginBottom: 20,
+    color: '#6c757d',
+    marginBottom: 24,
   },
   bicyclesList: {
     flex: 1,
   },
   bicycleCard: {
-    backgroundColor: '#fff',
+    backgroundColor: '#f8f9fa',
     borderRadius: 12,
-    marginBottom: 15,
-    overflow: 'hidden',
     borderWidth: 2,
-    borderColor: '#e0e0e0',
+    borderColor: '#dee2e6',
+    padding: 16,
+    marginBottom: 12,
   },
-  selectedBicycleCard: {
+  bicycleCardSelected: {
     borderColor: '#FFD11E',
     backgroundColor: '#FFF5CC',
   },
-  bicycleImage: {
-    width: '100%',
-    height: 200,
+  bicycleCardContent: {
+    position: 'relative',
   },
-  bicycleInfo: {
-    padding: 15,
-  },
-  bicycleHeader: {
-    marginBottom: 10,
+  bicycleCardHeader: {
+    marginBottom: 8,
   },
   bicycleName: {
     fontSize: 18,
@@ -622,55 +702,65 @@ const styles = StyleSheet.create({
   },
   bicycleModel: {
     fontSize: 14,
-    color: '#4A4A4A',
+    color: '#6c757d',
   },
-  ratesContainer: {
-    marginBottom: 10,
-  },
-  rateItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 5,
-  },
-  rateLabel: {
+  bicycleDescription: {
     fontSize: 14,
     color: '#4A4A4A',
+    marginBottom: 12,
   },
-  rateValue: {
+  bicycleRates: {
+    marginBottom: 8,
+  },
+  rateText: {
     fontSize: 14,
-    fontWeight: 'bold',
     color: '#2D3E50',
+    fontWeight: '600',
   },
-  specialInstructions: {
-    fontSize: 12,
-    color: '#dc3545',
-    fontStyle: 'italic',
-    marginBottom: 10,
-  },
-  specificationsContainer: {
-    marginBottom: 10,
-  },
-  specificationsTitle: {
+  deliveryText: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#2D3E50',
-    marginBottom: 5,
-  },
-  specificationsText: {
-    fontSize: 12,
-    color: '#4A4A4A',
+    color: '#FFD11E',
+    fontWeight: '600',
   },
   selectedIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
+    position: 'absolute',
+    top: -8,
+    right: -8,
   },
-  selectedText: {
-    marginLeft: 5,
-    fontSize: 14,
+  stepFooter: {
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  stepBackButton: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+  },
+  backButtonText: {
+    color: '#6c757d',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  nextButton: {
+    backgroundColor: '#FFD11E',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    flex: 1,
+    marginLeft: 12,
+  },
+  nextButtonText: {
+    color: '#2D3E50',
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#28a745',
+  },
+  buttonDisabled: {
+    backgroundColor: '#dee2e6',
   },
   formContainer: {
     flex: 1,
@@ -684,12 +774,18 @@ const styles = StyleSheet.create({
     color: '#2D3E50',
     marginBottom: 8,
   },
+  inputValue: {
+    fontSize: 16,
+    color: '#2D3E50',
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+  },
   input: {
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
-    borderRadius: 10,
-    padding: 15,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    borderRadius: 8,
+    padding: 12,
     fontSize: 16,
     color: '#2D3E50',
   },
@@ -697,211 +793,155 @@ const styles = StyleSheet.create({
     height: 80,
     textAlignVertical: 'top',
   },
-  deliveryChargeNote: {
-    fontSize: 12,
-    color: '#4A4A4A',
-    marginTop: 5,
-    fontStyle: 'italic',
-  },
   durationTypeContainer: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
   },
   durationTypeButton: {
     flex: 1,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
     borderRadius: 8,
-    padding: 15,
     alignItems: 'center',
   },
-  selectedDurationType: {
+  durationTypeSelected: {
     borderColor: '#FFD11E',
     backgroundColor: '#FFF5CC',
   },
   durationTypeText: {
     fontSize: 16,
-    color: '#4A4A4A',
+    color: '#6c757d',
+    fontWeight: '600',
   },
-  selectedDurationTypeText: {
+  durationTypeTextSelected: {
     color: '#2D3E50',
-    fontWeight: 'bold',
   },
-  reviewContainer: {
-    flex: 1,
+  durationCountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
   },
-  reviewSection: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
+  durationCountButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#dee2e6',
   },
-  reviewSectionTitle: {
+  durationCountText: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#2D3E50',
-    marginBottom: 10,
+    minWidth: 30,
+    textAlign: 'center',
   },
-  reviewItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 5,
-  },
-  reviewItemText: {
-    fontSize: 14,
-    color: '#4A4A4A',
-  },
-  reviewItemSubtext: {
-    fontSize: 12,
-    color: '#4A4A4A',
-  },
-  reviewItemPrice: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#2D3E50',
-  },
-  reviewItemLabel: {
-    fontSize: 14,
-    color: '#4A4A4A',
+  summaryContainer: {
     flex: 1,
   },
-  reviewItemValue: {
-    fontSize: 14,
+  summarySection: {
+    marginBottom: 24,
+  },
+  summarySectionTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#2D3E50',
-    flex: 2,
+    marginBottom: 12,
   },
-  totalItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    marginTop: 10,
-  },
-  totalItemText: {
+  summaryText: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2D3E50',
+    color: '#4A4A4A',
+    marginBottom: 4,
   },
-  totalItemPrice: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFD11E',
-  },
-  discountText: {
-    color: '#28a745',
-  },
-  couponContainer: {
+  couponInputContainer: {
     flexDirection: 'row',
-    gap: 10,
-  },
-  couponInput: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
+    gap: 12,
+    marginBottom: 8,
   },
   applyCouponButton: {
     backgroundColor: '#FFD11E',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 8,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   applyCouponText: {
     color: '#2D3E50',
     fontWeight: 'bold',
   },
-  appliedCouponContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: '#d4edda',
-    borderRadius: 8,
-  },
-  appliedCouponText: {
-    fontSize: 14,
-    color: '#155724',
-  },
-  removeCouponText: {
-    fontSize: 14,
+  couponError: {
     color: '#dc3545',
-    fontWeight: 'bold',
+    fontSize: 14,
+    marginTop: 4,
   },
-  paymentOptions: {
+  couponSuccess: {
+    color: '#28a745',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  paymentOptionsContainer: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 20,
   },
   paymentOption: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 15,
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
-    borderRadius: 8,
     gap: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    borderRadius: 8,
+    flex: 1,
   },
-  selectedPaymentOption: {
+  paymentOptionSelected: {
     borderColor: '#FFD11E',
     backgroundColor: '#FFF5CC',
   },
   paymentOptionText: {
-    fontSize: 14,
-    color: '#2D3E50',
-  },
-  stepFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-  },
-  backButton: {
-    backgroundColor: '#4A4A4A',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: '#fff',
     fontSize: 16,
-    fontWeight: 'bold',
-  },
-  nextButton: {
-    backgroundColor: '#FFD11E',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
-  nextButtonText: {
     color: '#2D3E50',
+    fontWeight: '600',
+  },
+  totalBreakdown: {
+    gap: 8,
+  },
+  totalItem: {
     fontSize: 16,
+    color: '#4A4A4A',
+  },
+  totalAmount: {
+    fontSize: 18,
     fontWeight: 'bold',
+    color: '#2D3E50',
+    marginTop: 8,
   },
   submitButton: {
-    backgroundColor: '#28a745',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
+    backgroundColor: '#FFD11E',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    flex: 1,
+    marginLeft: 12,
   },
   submitButtonText: {
-    color: '#fff',
+    color: '#2D3E50',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  disabledButton: {
-    opacity: 0.6,
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    color: '#2D3E50',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
 }); 

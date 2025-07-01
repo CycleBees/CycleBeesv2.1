@@ -29,18 +29,31 @@ const storage = multer.diskStorage({
 const upload = multer({
     storage: storage,
     limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB limit
-        files: 6 // Max 6 files
+        fileSize: 50 * 1024 * 1024, // 50MB limit for videos
+        files: 6 // Max 6 files (5 photos + 1 video)
     },
     fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|gif|mp4|avi|mov/;
-        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-        const mimetype = allowedTypes.test(file.mimetype);
+        // Check file type
+        const allowedImageTypes = /jpeg|jpg|png|gif/;
+        const allowedVideoTypes = /mp4|avi|mov|mkv/;
+        const extname = path.extname(file.originalname).toLowerCase();
         
-        if (mimetype && extname) {
+        if (file.mimetype.startsWith('image/') && allowedImageTypes.test(extname)) {
+            // Check photo count limit (max 5)
+            const photoCount = req.files ? req.files.filter(f => f.mimetype.startsWith('image/')).length : 0;
+            if (photoCount >= 5) {
+                return cb(new Error('Maximum 5 photos allowed'));
+            }
+            return cb(null, true);
+        } else if (file.mimetype.startsWith('video/') && allowedVideoTypes.test(extname)) {
+            // Check video count limit (max 1)
+            const videoCount = req.files ? req.files.filter(f => f.mimetype.startsWith('video/')).length : 0;
+            if (videoCount >= 1) {
+                return cb(new Error('Only 1 video allowed'));
+            }
             return cb(null, true);
         } else {
-            cb(new Error('Only image and video files are allowed!'));
+            cb(new Error('Only image (JPEG, PNG, GIF) and video (MP4, AVI, MOV, MKV) files are allowed!'));
         }
     }
 });
@@ -58,10 +71,17 @@ router.get('/admin/requests', authenticateToken, requireAdmin, (req, res) => {
             u.full_name as user_name,
             u.phone as user_phone,
             ts.start_time,
-            ts.end_time
+            ts.end_time,
+            c.code as coupon_code,
+            c.discount_type as coupon_discount_type,
+            c.discount_value as coupon_discount_value,
+            cu.discount_amount as coupon_discount_amount,
+            (rr.total_amount - COALESCE(cu.discount_amount, 0)) as net_amount
         FROM repair_requests rr
         LEFT JOIN users u ON rr.user_id = u.id
         LEFT JOIN time_slots ts ON rr.time_slot_id = ts.id
+        LEFT JOIN coupon_usage cu ON cu.request_type = 'repair' AND cu.request_id = rr.id
+        LEFT JOIN coupons c ON cu.coupon_id = c.id
     `;
     
     const params = [];
@@ -82,33 +102,92 @@ router.get('/admin/requests', authenticateToken, requireAdmin, (req, res) => {
             });
         }
         
-        // Get total count
-        let countQuery = 'SELECT COUNT(*) as total FROM repair_requests';
-        if (status) {
-            countQuery += ' WHERE status = ?';
-        }
+        // Get services for each request
+        const requestsWithServices = [];
+        let completed = 0;
         
-        db.get(countQuery, status ? [status] : [], (err, countResult) => {
-            if (err) {
-                console.error('Error counting repair requests:', err);
-                return res.status(500).json({
-                    success: false,
-                    message: 'Failed to count repair requests'
-                });
-            }
-            
-            res.json({
+        if (requests.length === 0) {
+            return res.json({
                 success: true,
                 data: {
-                    requests,
+                    requests: [],
                     pagination: {
                         page: parseInt(page),
                         limit: parseInt(limit),
-                        total: countResult.total,
-                        pages: Math.ceil(countResult.total / limit)
+                        total: 0,
+                        pages: 0
                     }
                 }
             });
+        }
+        
+        requests.forEach((request) => {
+            db.all(
+                `SELECT 
+                    rrs.*,
+                    rs.name,
+                    rs.description,
+                    rs.special_instructions
+                FROM repair_request_services rrs
+                LEFT JOIN repair_services rs ON rrs.repair_service_id = rs.id
+                WHERE rrs.repair_request_id = ?`,
+                [request.id],
+                (err, services) => {
+                    if (err) {
+                        console.error('Error fetching request services:', err);
+                    }
+                    
+                    // Get files for this request
+                    db.all(
+                        'SELECT * FROM repair_request_files WHERE repair_request_id = ? ORDER BY display_order',
+                        [request.id],
+                        (err, files) => {
+                            if (err) {
+                                console.error('Error fetching request files:', err);
+                            }
+                            
+                            requestsWithServices.push({
+                                ...request,
+                                services: services || [],
+                                files: files || []
+                            });
+                            
+                            completed++;
+                            
+                            if (completed === requests.length) {
+                                // Get total count
+                                let countQuery = 'SELECT COUNT(*) as total FROM repair_requests';
+                                if (status) {
+                                    countQuery += ' WHERE status = ?';
+                                }
+                                
+                                db.get(countQuery, status ? [status] : [], (err, countResult) => {
+                                    if (err) {
+                                        console.error('Error counting repair requests:', err);
+                                        return res.status(500).json({
+                                            success: false,
+                                            message: 'Failed to count repair requests'
+                                        });
+                                    }
+                                    
+                                    res.json({
+                                        success: true,
+                                        data: {
+                                            requests: requestsWithServices,
+                                            pagination: {
+                                                page: parseInt(page),
+                                                limit: parseInt(limit),
+                                                total: countResult.total,
+                                                pages: Math.ceil(countResult.total / limit)
+                                            }
+                                        }
+                                    });
+                                });
+                            }
+                        }
+                    );
+                }
+            );
         });
     });
 });
@@ -428,6 +507,55 @@ router.delete('/admin/time-slots/:id', authenticateToken, requireAdmin, (req, re
     });
 });
 
+// 6. Delete repair request (Admin)
+router.delete('/admin/requests/:id', authenticateToken, requireAdmin, (req, res) => {
+    const { id } = req.params;
+    
+    // First, delete related records (files and services)
+    db.run('DELETE FROM repair_request_files WHERE repair_request_id = ?', [id], (err) => {
+        if (err) {
+            console.error('Error deleting repair request files:', err);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to delete repair request files'
+            });
+        }
+        
+        db.run('DELETE FROM repair_request_services WHERE repair_request_id = ?', [id], (err) => {
+            if (err) {
+                console.error('Error deleting repair request services:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Failed to delete repair request services'
+                });
+            }
+            
+            // Finally, delete the main request
+            db.run('DELETE FROM repair_requests WHERE id = ?', [id], function(err) {
+                if (err) {
+                    console.error('Error deleting repair request:', err);
+                    return res.status(500).json({
+                        success: false,
+                        message: 'Failed to delete repair request'
+                    });
+                }
+                
+                if (this.changes === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Repair request not found'
+                    });
+                }
+                
+                res.json({
+                    success: true,
+                    message: 'Repair request deleted successfully'
+                });
+            });
+        });
+    });
+});
+
 // ==================== USER ROUTES ====================
 
 // 1. Get available repair services (User)
@@ -485,114 +613,110 @@ router.get('/mechanic-charge', (req, res) => {
 });
 
 // 4. Create repair request (User)
-router.post('/requests', authenticateToken, requireUser, upload.array('files', 6), [
-    body('contactNumber').isLength({ min: 10, max: 10 }).withMessage('Valid contact number is required'),
-    body('preferredDate').isDate().withMessage('Valid preferred date is required'),
-    body('timeSlotId').isInt().withMessage('Valid time slot is required'),
-    body('paymentMethod').isIn(['online', 'offline']).withMessage('Valid payment method is required'),
-    body('services').isArray().withMessage('Services array is required'),
-    body('services.*.serviceId').isInt().withMessage('Valid service ID is required'),
-    body('services.*.price').isFloat({ min: 0 }).withMessage('Valid service price is required')
-], (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: 'Validation error',
-            errors: errors.array()
-        });
-    }
-    
-    const {
-        contactNumber,
-        alternateNumber,
-        email,
-        notes,
-        preferredDate,
-        timeSlotId,
-        paymentMethod,
-        services,
-        totalAmount
-    } = req.body;
-    
-    // Calculate expiry time (15 minutes from now)
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    
-    db.run(
-        `INSERT INTO repair_requests (
-            user_id, contact_number, alternate_number, email, notes, 
-            preferred_date, time_slot_id, total_amount, payment_method, expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-            req.user.userId, contactNumber, alternateNumber, email, notes,
-            preferredDate, timeSlotId, totalAmount, paymentMethod, expiresAt.toISOString()
-        ],
-        function(err) {
-            if (err) {
-                console.error('Error creating repair request:', err);
-                return res.status(500).json({
-                    success: false,
-                    message: 'Failed to create repair request'
+router.post('/requests', authenticateToken, requireUser, upload.array('files', 6), async (req, res) => {
+    try {
+        console.log('Received request body:', req.body);
+        console.log('Received files:', req.files);
+        const {
+            contactNumber,
+            alternateNumber,
+            email,
+            notes,
+            address,
+            preferredDate,
+            timeSlotId,
+            paymentMethod,
+            totalAmount
+        } = req.body;
+
+        // Parse services
+        let services = [];
+        if (req.body.services) {
+            try {
+                services = JSON.parse(req.body.services);
+            } catch (e) {
+                return res.status(400).json({ success: false, message: 'Invalid services format (JSON parse error)' });
+            }
+        }
+        if (!Array.isArray(services) || services.length === 0) {
+            return res.status(400).json({ success: false, message: 'At least one service is required' });
+        }
+        for (let i = 0; i < services.length; i++) {
+            const service = services[i];
+            if (!service.serviceId || !service.price) {
+                return res.status(400).json({ success: false, message: `Service ${i + 1} is missing required fields` });
+            }
+        }
+
+        // Calculate expiry time (15 minutes from now)
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+        // Insert repair request
+        db.run(
+            `INSERT INTO repair_requests (
+                user_id, contact_number, alternate_number, email, notes, address,
+                preferred_date, time_slot_id, total_amount, payment_method, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                req.user.userId, contactNumber, alternateNumber, email, notes, address,
+                preferredDate, timeSlotId, totalAmount, paymentMethod, expiresAt.toISOString()
+            ],
+            function(err) {
+                if (err) {
+                    console.error('Error creating repair request:', err);
+                    return res.status(500).json({ success: false, message: 'Failed to create repair request' });
+                }
+                const requestId = this.lastID;
+                // Insert services
+                const serviceQuery = 'INSERT INTO repair_request_services (repair_request_id, repair_service_id, price, discount_amount) VALUES (?, ?, ?, ?)';
+                let completed = 0;
+                let serviceError = false;
+                services.forEach((service, index) => {
+                    db.run(serviceQuery, [requestId, service.serviceId, service.price, service.discountAmount || 0], (err) => {
+                        if (err) {
+                            console.error('Error inserting service:', err);
+                            serviceError = true;
+                        }
+                        completed++;
+                        if (completed === services.length) {
+                            if (serviceError) {
+                                return res.status(500).json({ success: false, message: 'Failed to insert services' });
+                            }
+                            // Insert files
+                            if (req.files && req.files.length > 0) {
+                                const fileQuery = 'INSERT INTO repair_request_files (repair_request_id, file_url, file_type, display_order) VALUES (?, ?, ?, ?)';
+                                let filesCompleted = 0;
+                                let fileError = false;
+                                req.files.forEach((file, index) => {
+                                    const fileType = file.mimetype.startsWith('image/') ? 'image' : 'video';
+                                    const fileUrl = `/uploads/repair-requests/${file.filename}`;
+                                    db.run(fileQuery, [requestId, fileUrl, fileType, index], (err) => {
+                                        if (err) {
+                                            console.error('[ERROR] Failed to insert file:', { requestId, fileUrl, fileType, index, error: err });
+                                            fileError = true;
+                                        } else {
+                                            console.log('[DEBUG] File inserted successfully:', { requestId, fileUrl, fileType, index });
+                                        }
+                                        filesCompleted++;
+                                        if (filesCompleted === req.files.length) {
+                                            if (fileError) {
+                                                return res.status(500).json({ success: false, message: 'Failed to insert files' });
+                                            }
+                                            return res.status(201).json({ success: true, message: 'Repair request created successfully', data: { requestId } });
+                                        }
+                                    });
+                                });
+                            } else {
+                                return res.status(201).json({ success: true, message: 'Repair request created successfully', data: { requestId } });
+                            }
+                        }
+                    });
                 });
             }
-            
-            const requestId = this.lastID;
-            
-            // Insert selected services
-            const serviceValues = services.map(service => 
-                [requestId, service.serviceId, service.price, service.discountAmount || 0]
-            );
-            
-            const serviceQuery = 'INSERT INTO repair_request_services (repair_request_id, repair_service_id, price, discount_amount) VALUES (?, ?, ?, ?)';
-            
-            // Insert services one by one
-            let completed = 0;
-            services.forEach((service, index) => {
-                db.run(serviceQuery, [requestId, service.serviceId, service.price, service.discountAmount || 0], (err) => {
-                    if (err) {
-                        console.error('Error inserting service:', err);
-                    }
-                    completed++;
-                    
-                    if (completed === services.length) {
-                        // Handle file uploads
-                        if (req.files && req.files.length > 0) {
-                            const fileValues = req.files.map((file, index) => {
-                                const fileType = file.mimetype.startsWith('image/') ? 'image' : 'video';
-                                return [requestId, `/uploads/repair-requests/${file.filename}`, fileType, index];
-                            });
-                            
-                            const fileQuery = 'INSERT INTO repair_request_files (repair_request_id, file_url, file_type, display_order) VALUES (?, ?, ?, ?)';
-                            
-                            let filesCompleted = 0;
-                            fileValues.forEach((fileValue, index) => {
-                                db.run(fileQuery, fileValue, (err) => {
-                                    if (err) {
-                                        console.error('Error inserting file:', err);
-                                    }
-                                    filesCompleted++;
-                                    
-                                    if (filesCompleted === fileValues.length) {
-                                        res.status(201).json({
-                                            success: true,
-                                            message: 'Repair request created successfully',
-                                            data: { requestId }
-                                        });
-                                    }
-                                });
-                            });
-                        } else {
-                            res.status(201).json({
-                                success: true,
-                                message: 'Repair request created successfully',
-                                data: { requestId }
-                            });
-                        }
-                    }
-                });
-            });
-        }
-    );
+        );
+    } catch (error) {
+        console.error('Unexpected error in repair request creation:', error);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
+    }
 });
 
 // 5. Get user's repair requests (User)
@@ -626,9 +750,61 @@ router.get('/requests', authenticateToken, requireUser, (req, res) => {
             });
         }
         
-        res.json({
-            success: true,
-            data: requests
+        // Get services and files for each request
+        const requestsWithDetails = [];
+        let completed = 0;
+        
+        if (requests.length === 0) {
+            return res.json({
+                success: true,
+                data: []
+            });
+        }
+        
+        requests.forEach((request) => {
+            // Get services for this request
+            db.all(
+                `SELECT 
+                    rrs.*,
+                    rs.name,
+                    rs.description,
+                    rs.special_instructions
+                FROM repair_request_services rrs
+                LEFT JOIN repair_services rs ON rrs.repair_service_id = rs.id
+                WHERE rrs.repair_request_id = ?`,
+                [request.id],
+                (err, services) => {
+                    if (err) {
+                        console.error('Error fetching request services:', err);
+                    }
+                    
+                    // Get files for this request
+                    db.all(
+                        'SELECT * FROM repair_request_files WHERE repair_request_id = ? ORDER BY display_order',
+                        [request.id],
+                        (err, files) => {
+                            if (err) {
+                                console.error('Error fetching request files:', err);
+                            }
+                            
+                            requestsWithDetails.push({
+                                ...request,
+                                services: services || [],
+                                files: files || []
+                            });
+                            
+                            completed++;
+                            
+                            if (completed === requests.length) {
+                                res.json({
+                                    success: true,
+                                    data: requestsWithDetails
+                                });
+                            }
+                        }
+                    );
+                }
+            );
         });
     });
 });

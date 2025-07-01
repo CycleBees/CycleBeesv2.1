@@ -1,110 +1,273 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
-import { Collapsible } from '@/components/Collapsible';
-import { ExternalLink } from '@/components/ExternalLink';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { IconSymbol } from '@/components/ui/IconSymbol';
+export default function ExploreScreen() {
+  const router = useRouter();
 
-export default function TabTwoScreen() {
+  const handleFeaturePress = (feature: string) => {
+    switch (feature) {
+      case 'repair':
+        router.push('/book-repair');
+        break;
+      case 'rental':
+        router.push('/book-rental');
+        break;
+      case 'requests':
+        router.push('/my-requests');
+        break;
+      case 'profile':
+        router.push('/profile');
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Explore</ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image source={require('@/assets/images/react-logo.png')} style={{ alignSelf: 'center' }} />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Custom fonts">
-        <ThemedText>
-          Open <ThemedText type="defaultSemiBold">app/_layout.tsx</ThemedText> to see how to load{' '}
-          <ThemedText style={{ fontFamily: 'SpaceMono' }}>
-            custom fonts such as this one.
-          </ThemedText>
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/versions/latest/sdk/font">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful <ThemedText type="defaultSemiBold">react-native-reanimated</ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Explore Services</Text>
+        <Text style={styles.subtitle}>Discover what Cycle-Bees has to offer</Text>
+      </View>
+
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Services Overview */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Our Services</Text>
+          
+          <View style={styles.serviceCard}>
+            <View style={styles.serviceIcon}>
+              <Ionicons name="construct" size={32} color="#FFD11E" />
+            </View>
+            <View style={styles.serviceContent}>
+              <Text style={styles.serviceTitle}>Bicycle Repair</Text>
+              <Text style={styles.serviceDescription}>
+                Professional repair services for all types of bicycles. From tire punctures to complete tune-ups.
+              </Text>
+              <TouchableOpacity 
+                style={styles.serviceButton}
+                onPress={() => handleFeaturePress('repair')}
+              >
+                <Text style={styles.serviceButtonText}>Book Repair</Text>
+                <Ionicons name="arrow-forward" size={16} color="#2D3E50" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.serviceCard}>
+            <View style={styles.serviceIcon}>
+              <Ionicons name="bicycle" size={32} color="#FFD11E" />
+            </View>
+            <View style={styles.serviceContent}>
+              <Text style={styles.serviceTitle}>Bicycle Rental</Text>
+              <Text style={styles.serviceDescription}>
+                Quality bicycles available for daily and weekly rentals. Perfect for exploring the city.
+              </Text>
+              <TouchableOpacity 
+                style={styles.serviceButton}
+                onPress={() => handleFeaturePress('rental')}
+              >
+                <Text style={styles.serviceButtonText}>Rent Bicycle</Text>
+                <Ionicons name="arrow-forward" size={16} color="#2D3E50" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {/* Features */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Why Choose Cycle-Bees?</Text>
+          
+          <View style={styles.featuresGrid}>
+            <View style={styles.featureItem}>
+              <Ionicons name="shield-checkmark" size={24} color="#FFD11E" />
+              <Text style={styles.featureTitle}>Quality Service</Text>
+              <Text style={styles.featureDescription}>Professional mechanics and well-maintained bicycles</Text>
+            </View>
+
+            <View style={styles.featureItem}>
+              <Ionicons name="time" size={24} color="#FFD11E" />
+              <Text style={styles.featureTitle}>Quick Service</Text>
+              <Text style={styles.featureDescription}>Fast turnaround times for repairs and rentals</Text>
+            </View>
+
+            <View style={styles.featureItem}>
+              <Ionicons name="card" size={24} color="#FFD11E" />
+              <Text style={styles.featureTitle}>Flexible Payment</Text>
+              <Text style={styles.featureDescription}>Online and offline payment options available</Text>
+            </View>
+
+            <View style={styles.featureItem}>
+              <Ionicons name="location" size={24} color="#FFD11E" />
+              <Text style={styles.featureTitle}>Home Delivery</Text>
+              <Text style={styles.featureDescription}>Convenient delivery and pickup services</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          
+          <View style={styles.quickActions}>
+            <TouchableOpacity 
+              style={styles.quickAction}
+              onPress={() => handleFeaturePress('requests')}
+            >
+              <Ionicons name="list" size={24} color="#FFD11E" />
+              <Text style={styles.quickActionText}>My Requests</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.quickAction}
+              onPress={() => handleFeaturePress('profile')}
+            >
+              <Ionicons name="person" size={24} color="#FFD11E" />
+              <Text style={styles.quickActionText}>Profile</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
   },
-  titleContainer: {
+  header: {
+    padding: 20,
+    backgroundColor: '#2D3E50',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFD11E',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    opacity: 0.9,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  section: {
+    padding: 20,
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginBottom: 20,
+  },
+  serviceCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 16,
     flexDirection: 'row',
-    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  serviceIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FBE9A0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  serviceContent: {
+    flex: 1,
+  },
+  serviceTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginBottom: 8,
+  },
+  serviceDescription: {
+    fontSize: 14,
+    color: '#4A4A4A',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  serviceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+  },
+  serviceButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2D3E50',
+    marginRight: 8,
+  },
+  featuresGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  featureItem: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  featureTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginTop: 12,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  featureDescription: {
+    fontSize: 12,
+    color: '#4A4A4A',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  quickAction: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  quickActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2D3E50',
+    marginTop: 8,
   },
 });

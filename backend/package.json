@@ -7,6 +7,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "setup-db": "node database/setup.js",
+    "reset-user-data": "node database/reset-user-data.js",
     "migrate": "node database/migrate.js"
   },
   "dependencies": {
@@ -18,11 +19,13 @@
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
     "express-validator": "^7.0.1",
+    "form-data": "^4.0.3",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
+    "node-fetch": "^3.3.2",
     "pg": "^8.11.3",
     "sqlite3": "^5.1.6"
   },

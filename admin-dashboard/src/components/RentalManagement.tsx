@@ -5,15 +5,26 @@ interface RentalRequest {
   user_name: string;
   user_phone: string;
   bicycle_name: string;
+  bicycle_model?: string;
   duration_type: string;
   duration_count: number;
   total_amount: number;
+  net_amount: number;
   status: string;
   created_at: string;
+  updated_at?: string;
+  expires_at?: string;
   delivery_address: string;
   delivery_charge: number;
   payment_method: string;
-  special_instructions: string;
+  special_instructions?: string;
+  alternate_number?: string;
+  email?: string;
+  // Coupon information
+  coupon_code?: string;
+  coupon_discount_type?: string;
+  coupon_discount_value?: number;
+  coupon_discount_amount?: number;
 }
 
 interface Bicycle {
@@ -53,6 +64,10 @@ const RentalManagement: React.FC = () => {
   });
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
+  
+  // Request details modal states
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<RentalRequest | null>(null);
 
   useEffect(() => {
     if (activeTab === 'requests') {
@@ -302,6 +317,42 @@ const RentalManagement: React.FC = () => {
     setShowBicycleForm(false);
   };
 
+  const openRequestModal = (request: RentalRequest) => {
+    setSelectedRequest(request);
+    setShowRequestModal(true);
+  };
+
+  const closeRequestModal = () => {
+    setSelectedRequest(null);
+    setShowRequestModal(false);
+  };
+
+  const deleteRequest = async (requestId: number) => {
+    if (!confirm('Are you sure you want to delete this rental request?')) {
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('adminToken');
+      const response = await fetch(`http://localhost:3000/api/rental/admin/requests/${requestId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete rental request');
+      }
+
+      fetchRentalRequests();
+      closeRequestModal();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    }
+  };
+
   if (loading) return <div className="loading">Loading...</div>;
   if (error) return <div className="error">Error: {error}</div>;
 
@@ -347,35 +398,62 @@ const RentalManagement: React.FC = () => {
                     </span>
                   </div>
                   
-                  <div className="request-details">
-                    <p><strong>Customer:</strong> {request.user_name}</p>
-                    <p><strong>Phone:</strong> {request.user_phone}</p>
-                    <p><strong>Bicycle:</strong> {request.bicycle_name}</p>
-                    <p><strong>Duration:</strong> {request.duration_count} {request.duration_type}</p>
-                    <p><strong>Total Amount:</strong> ₹{request.total_amount}</p>
-                    <p><strong>Payment Method:</strong> {request.payment_method}</p>
-                    <p><strong>Delivery Address:</strong> {request.delivery_address}</p>
-                    <p><strong>Delivery Charge:</strong> ₹{request.delivery_charge}</p>
-                    {request.special_instructions && (
-                      <p><strong>Special Instructions:</strong> {request.special_instructions}</p>
-                    )}
-                    <p><strong>Created:</strong> {new Date(request.created_at).toLocaleString()}</p>
+                  <div className="request-summary">
+                    <div className="summary-row">
+                      <span className="summary-label">Customer:</span>
+                      <span className="summary-value">{request.user_name}</span>
+                    </div>
+                    <div className="summary-row">
+                      <span className="summary-label">Phone:</span>
+                      <span className="summary-value">{request.user_phone}</span>
+                    </div>
+                    <div className="summary-row">
+                      <span className="summary-label">Bicycle:</span>
+                      <span className="summary-value">{request.bicycle_name}</span>
+                    </div>
+                    <div className="summary-row">
+                      <span className="summary-label">Duration:</span>
+                      <span className="summary-value">{request.duration_count} {request.duration_type}</span>
+                    </div>
+                    <div className="summary-row">
+                      <span className="summary-label">Address:</span>
+                      <span className="summary-value" title={request.delivery_address}>
+                        {request.delivery_address.length > 25 ? request.delivery_address.substring(0, 25) + '...' : request.delivery_address}
+                      </span>
+                    </div>
+                    <div className="summary-row">
+                      <span className="summary-label">Amount:</span>
+                      <span className="summary-value amount">₹{request.net_amount || request.total_amount}</span>
+                    </div>
                   </div>
 
                   <div className="request-actions">
+                    <button 
+                      onClick={() => openRequestModal(request)}
+                      className="action-btn view"
+                    >
+                      View Details
+                    </button>
+                    
                     {request.status === 'pending' && (
                       <>
                         <button 
                           onClick={() => updateRequestStatus(request.id, 'waiting_payment')}
                           className="action-btn approve"
                         >
-                          Approve (Online Payment)
+                          Approve (Online)
                         </button>
                         <button 
                           onClick={() => updateRequestStatus(request.id, 'arranging_delivery')}
                           className="action-btn approve"
                         >
-                          Approve (Cash Payment)
+                          Approve (Cash)
+                        </button>
+                        <button 
+                          onClick={() => deleteRequest(request.id)}
+                          className="action-btn delete"
+                        >
+                          Delete
                         </button>
                       </>
                     )}
@@ -384,7 +462,7 @@ const RentalManagement: React.FC = () => {
                         onClick={() => updateRequestStatus(request.id, 'arranging_delivery')}
                         className="action-btn approve"
                       >
-                        Payment Received - Start Delivery
+                        Payment Received
                       </button>
                     )}
                     {request.status === 'arranging_delivery' && (
@@ -656,6 +734,210 @@ const RentalManagement: React.FC = () => {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Rental Request Details Modal */}
+      {showRequestModal && selectedRequest && (
+        <div className="modal-overlay" onClick={closeRequestModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Rental Request #{selectedRequest.id}</h3>
+              <button className="close-btn" onClick={closeRequestModal}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              {/* Request Status & Timeline */}
+              <div className="detail-section">
+                <h4>Request Status & Timeline</h4>
+                <div className="status-row">
+                  <span className="status-label">Status:</span>
+                  <span 
+                    className="status-badge"
+                    style={{ backgroundColor: getStatusColor(selectedRequest.status) }}
+                  >
+                    {selectedRequest.status.replace('_', ' ').toUpperCase()}
+                  </span>
+                </div>
+                <p><strong>Created:</strong> {new Date(selectedRequest.created_at).toLocaleString()}</p>
+                {selectedRequest.updated_at && (
+                  <p><strong>Last Updated:</strong> {new Date(selectedRequest.updated_at).toLocaleString()}</p>
+                )}
+                {selectedRequest.status === 'pending' && selectedRequest.expires_at && (
+                  <p><strong>Expires:</strong> {new Date(selectedRequest.expires_at).toLocaleString()}</p>
+                )}
+              </div>
+
+              {/* Customer Information */}
+              <div className="detail-section">
+                <h4>Customer Information</h4>
+                <div className="info-grid">
+                  <div className="info-item">
+                    <span className="info-label">Name:</span>
+                    <span className="info-value">{selectedRequest.user_name}</span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">Phone:</span>
+                    <span className="info-value">{selectedRequest.user_phone}</span>
+                  </div>
+                  {selectedRequest.alternate_number && (
+                    <div className="info-item">
+                      <span className="info-label">Alternate:</span>
+                      <span className="info-value">{selectedRequest.alternate_number}</span>
+                    </div>
+                  )}
+                  {selectedRequest.email && (
+                    <div className="info-item">
+                      <span className="info-label">Email:</span>
+                      <span className="info-value">{selectedRequest.email}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Rental Details */}
+              <div className="detail-section">
+                <h4>Rental Details</h4>
+                <div className="info-grid">
+                  <div className="info-item">
+                    <span className="info-label">Bicycle:</span>
+                    <span className="info-value">{selectedRequest.bicycle_name}</span>
+                  </div>
+                  {selectedRequest.bicycle_model && (
+                    <div className="info-item">
+                      <span className="info-label">Model:</span>
+                      <span className="info-value">{selectedRequest.bicycle_model}</span>
+                    </div>
+                  )}
+                  <div className="info-item">
+                    <span className="info-label">Duration:</span>
+                    <span className="info-value">{selectedRequest.duration_count} {selectedRequest.duration_type}</span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">Payment Method:</span>
+                    <span className="info-value">{selectedRequest.payment_method}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Delivery Information */}
+              <div className="detail-section">
+                <h4>Delivery Information</h4>
+                <div className="info-grid">
+                  <div className="info-item full-width">
+                    <span className="info-label">Delivery Address:</span>
+                    <span className="info-value address-text">{selectedRequest.delivery_address}</span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">Delivery Charge:</span>
+                    <span className="info-value">₹{selectedRequest.delivery_charge}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Financial Information */}
+              <div className="detail-section">
+                <h4>Financial Information</h4>
+                <div className="info-grid">
+                  <div className="info-item">
+                    <span className="info-label">Total Amount:</span>
+                    <span className="info-value amount">₹{selectedRequest.total_amount}</span>
+                  </div>
+                  {selectedRequest.coupon_code && (
+                    <>
+                      <div className="info-item">
+                        <span className="info-label">Coupon Applied:</span>
+                        <span className="info-value coupon-code">{selectedRequest.coupon_code}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Discount:</span>
+                        <span className="info-value discount">
+                          {selectedRequest.coupon_discount_type === 'percentage' 
+                            ? `${selectedRequest.coupon_discount_value}%`
+                            : `₹${selectedRequest.coupon_discount_value}`
+                          }
+                        </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Discount Amount:</span>
+                        <span className="info-value discount-amount">-₹{selectedRequest.coupon_discount_amount || 0}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="info-item">
+                    <span className="info-label">Net Amount:</span>
+                    <span className="info-value net-amount">₹{selectedRequest.net_amount || selectedRequest.total_amount}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Additional Information */}
+              {selectedRequest.special_instructions && (
+                <div className="detail-section">
+                  <h4>Special Instructions</h4>
+                  <div className="notes-container">
+                    <p className="notes-text">{selectedRequest.special_instructions}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="modal-actions">
+              {selectedRequest.status === 'pending' && (
+                <div className="approval-actions">
+                  {selectedRequest.payment_method === 'online' ? (
+                    <button 
+                      onClick={() => updateRequestStatus(selectedRequest.id, 'waiting_payment')}
+                      className="action-btn approve"
+                    >
+                      Approve (Online Payment)
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => updateRequestStatus(selectedRequest.id, 'arranging_delivery')}
+                      className="action-btn approve"
+                    >
+                      Approve (Cash Payment)
+                    </button>
+                  )}
+                </div>
+              )}
+              
+              {selectedRequest.status === 'waiting_payment' && (
+                <button 
+                  onClick={() => updateRequestStatus(selectedRequest.id, 'arranging_delivery')}
+                  className="action-btn approve"
+                >
+                  Payment Received - Start Delivery
+                </button>
+              )}
+              
+              {selectedRequest.status === 'arranging_delivery' && (
+                <button 
+                  onClick={() => updateRequestStatus(selectedRequest.id, 'active_rental')}
+                  className="action-btn complete"
+                >
+                  Mark Delivered
+                </button>
+              )}
+              
+              {selectedRequest.status === 'active_rental' && (
+                <button 
+                  onClick={() => updateRequestStatus(selectedRequest.id, 'completed')}
+                  className="action-btn complete"
+                >
+                  Mark Completed
+                </button>
+              )}
+              
+              <button 
+                onClick={() => deleteRequest(selectedRequest.id)}
+                className="action-btn delete"
+              >
+                Delete Request
+              </button>
+            </div>
           </div>
         </div>
       )}

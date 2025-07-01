@@ -4,12 +4,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# # Environment variables
+# .env
+# .env.local
+# .env.development.local
+# .env.test.local
+# .env.production.local
 
 # Build outputs
 build/
@@ -22,15 +22,15 @@ out/
 *.sqlite
 *.sqlite3
 
-# Uploads and media files
-uploads/
-*.jpg
-*.jpeg
-*.png
-*.gif
-*.mp4
-*.mov
-*.avi
+# # Uploads and media files
+# uploads/
+# *.jpg
+# *.jpeg
+# *.png
+# *.gif
+# *.mp4
+# *.mov
+# *.avi
 
 # Logs
 logs/

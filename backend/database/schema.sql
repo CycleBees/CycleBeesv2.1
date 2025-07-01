@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS repair_requests (
     contact_number VARCHAR(15) NOT NULL,
     alternate_number VARCHAR(15),
     email VARCHAR(100),
+    address TEXT,
     notes TEXT,
     preferred_date DATE NOT NULL,
     time_slot_id INTEGER NOT NULL,

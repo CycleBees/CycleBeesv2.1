@@ -38,6 +38,7 @@ interface User {
   full_name: string;
   email: string;
   phone: string;
+  address?: string;
 }
 
 const { width } = Dimensions.get('window');
@@ -57,6 +58,7 @@ export default function BookRepairScreen() {
     alternate_number: '',
     email: '',
     notes: '',
+    address: '',
     preferred_date: new Date(),
     time_slot_id: 0
   });
@@ -95,7 +97,8 @@ export default function BookRepairScreen() {
         setUser(data.data.user);
         setFormData(prev => ({
           ...prev,
-          email: data.data.user.email
+          email: data.data.user.email,
+          address: data.data.user.address || ''
         }));
       }
     } catch (error) {
@@ -256,75 +259,106 @@ export default function BookRepairScreen() {
       Alert.alert('Error', 'Please select at least one repair service');
       return;
     }
-
     if (!formData.time_slot_id) {
       Alert.alert('Error', 'Please select a time slot');
       return;
     }
-
+    if (!formData.address.trim()) {
+      Alert.alert('Error', 'Please enter your address');
+      return;
+    }
+    
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
-      
-      // Create form data for file uploads
       const formDataToSend = new FormData();
-      formDataToSend.append('user_id', user?.id.toString() || '');
-      formDataToSend.append('time_slot_id', formData.time_slot_id.toString());
-      formDataToSend.append('alternate_number', formData.alternate_number);
-      formDataToSend.append('email', formData.email);
-      formDataToSend.append('notes', formData.notes);
-      formDataToSend.append('preferred_date', formData.preferred_date.toISOString().split('T')[0]);
-      formDataToSend.append('payment_method', paymentMethod);
-      if (appliedCoupon) {
-        formDataToSend.append('coupon_code', appliedCoupon.code);
-      }
       
-      // Add selected services
-      selectedServices.forEach((service, index) => {
-        formDataToSend.append(`services[${index}]`, service.id.toString());
-      });
-
-      // Add images
+      // Add basic form fields - match backend field names exactly
+      formDataToSend.append('contactNumber', user?.phone || '');
+      formDataToSend.append('alternateNumber', formData.alternate_number || '');
+      formDataToSend.append('email', formData.email || '');
+      formDataToSend.append('notes', formData.notes || '');
+      formDataToSend.append('address', formData.address || '');
+      formDataToSend.append('preferredDate', formData.preferred_date.toISOString().split('T')[0]);
+      formDataToSend.append('timeSlotId', formData.time_slot_id.toString());
+      formDataToSend.append('paymentMethod', paymentMethod);
+      formDataToSend.append('totalAmount', calculateTotalWithDiscount().toString());
+      
+      // Add services as JSON string - backend expects services field with JSON array
+      formDataToSend.append('services', JSON.stringify(
+        selectedServices.map(service => ({
+          serviceId: service.id,
+          price: service.price,
+          discountAmount: 0
+        }))
+      ));
+      
+      // Add images and video as 'files' - backend expects files array
       images.forEach((imageUri, index) => {
-        const imageFile = {
+        formDataToSend.append('files', {
           uri: imageUri,
           type: 'image/jpeg',
           name: `image_${index}.jpg`
-        } as any;
-        formDataToSend.append(`images`, imageFile);
+        } as any);
       });
-
-      // Add video
+      
       if (video) {
-        const videoFile = {
+        formDataToSend.append('files', {
           uri: video,
           type: 'video/mp4',
           name: 'video.mp4'
-        } as any;
-        formDataToSend.append('video', videoFile);
+        } as any);
       }
-
+      
+      console.log('Submitting repair request with data:', {
+        contactNumber: user?.phone,
+        alternateNumber: formData.alternate_number,
+        email: formData.email,
+        notes: formData.notes,
+        address: formData.address,
+        preferredDate: formData.preferred_date.toISOString().split('T')[0],
+        timeSlotId: formData.time_slot_id,
+        paymentMethod: paymentMethod,
+        totalAmount: calculateTotalWithDiscount(),
+        services: selectedServices.map(service => ({
+          serviceId: service.id,
+          price: service.price,
+          discountAmount: 0
+        })),
+        filesCount: images.length + (video ? 1 : 0)
+      });
+      
       const response = await fetch('http://localhost:3000/api/repair/requests', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data',
+          // Don't set Content-Type for FormData, let the browser set it with boundary
         },
         body: formDataToSend
       });
-
+      
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+      
       const data = await response.json();
-
-      if (response.ok) {
-        Alert.alert('Success', 'Repair request submitted successfully!', [
-          { text: 'OK', onPress: () => router.push('/my-requests') }
-        ]);
+      console.log('Response data:', data);
+      
+      if (response.ok && data.success) {
+        console.log('Repair request submitted successfully');
+        setLoading(false);
+        setTimeout(() => {
+          router.replace('/my-requests');
+        }, 500);
+        return;
       } else {
-        Alert.alert('Error', data.message || 'Failed to submit repair request');
+        console.error('Backend error:', data);
+        const errorMessage = data.message || data.errors?.map((e: any) => e.msg).join(', ') || 'Failed to submit repair request';
+        Alert.alert('Error', errorMessage);
+        setLoading(false);
       }
     } catch (error) {
+      console.error('Network error:', error);
       Alert.alert('Error', 'Network error. Please try again.');
-    } finally {
       setLoading(false);
     }
   };
@@ -426,12 +460,24 @@ export default function BookRepairScreen() {
         </View>
 
         <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Address</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={formData.address}
+            onChangeText={(text) => setFormData({...formData, address: text})}
+            placeholder="Enter address"
+            multiline
+            numberOfLines={3}
+          />
+        </View>
+
+        <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Notes (Optional)</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
             value={formData.notes}
             onChangeText={(text) => setFormData({...formData, notes: text})}
-            placeholder="Any special instructions or notes..."
+            placeholder="Any special instructions or notes"
             multiline
             numberOfLines={3}
           />
@@ -550,6 +596,11 @@ export default function BookRepairScreen() {
         </View>
 
         <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Address</Text>
+          <Text style={styles.summaryText}>{formData.address}</Text>
+        </View>
+
+        <View style={styles.summarySection}>
           <Text style={styles.summarySectionTitle}>Schedule</Text>
           <Text style={styles.summaryText}>
             Date: {formData.preferred_date.toLocaleDateString()}
@@ -568,7 +619,6 @@ export default function BookRepairScreen() {
 
         <View style={styles.summarySection}>
           <Text style={styles.summarySectionTitle}>Coupon</Text>
-          {/* Test coupons: WELCOME10 (min ₹500), FIRST50 (min ₹200) */}
           <View style={styles.couponInputContainer}>
             <TextInput
               style={[styles.input, { flex: 1 }]}
@@ -654,7 +704,10 @@ export default function BookRepairScreen() {
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#2D3E50" />
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#2D3E50" />
+              <Text style={styles.loadingText}>Submitting...</Text>
+            </View>
           ) : (
             <Text style={styles.submitButtonText}>Submit Request</Text>
           )}
@@ -1202,5 +1255,15 @@ const styles = StyleSheet.create({
     color: '#2D3E50',
     fontWeight: 'bold',
     fontSize: 12,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 }); 

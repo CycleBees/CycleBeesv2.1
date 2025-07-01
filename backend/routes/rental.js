@@ -59,10 +59,17 @@ router.get('/admin/requests', authenticateToken, requireAdmin, (req, res) => {
             u.phone as user_phone,
             b.name as bicycle_name,
             b.model as bicycle_model,
-            b.delivery_charge
+            b.delivery_charge,
+            c.code as coupon_code,
+            c.discount_type as coupon_discount_type,
+            c.discount_value as coupon_discount_value,
+            cu.discount_amount as coupon_discount_amount,
+            (rr.total_amount - COALESCE(cu.discount_amount, 0)) as net_amount
         FROM rental_requests rr
         LEFT JOIN users u ON rr.user_id = u.id
         LEFT JOIN bicycles b ON rr.bicycle_id = b.id
+        LEFT JOIN coupon_usage cu ON cu.request_type = 'rental' AND cu.request_id = rr.id
+        LEFT JOIN coupons c ON cu.coupon_id = c.id
     `;
     
     const params = [];
@@ -155,6 +162,45 @@ router.patch('/admin/requests/:id/status', authenticateToken, requireAdmin, [
             });
         }
     );
+});
+
+// 2.5. Delete rental request (Admin)
+router.delete('/admin/requests/:id', authenticateToken, requireAdmin, (req, res) => {
+    const { id } = req.params;
+    
+    // First check if the request exists
+    db.get('SELECT * FROM rental_requests WHERE id = ?', [id], (err, request) => {
+        if (err) {
+            console.error('Error checking rental request:', err);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to check rental request'
+            });
+        }
+        
+        if (!request) {
+            return res.status(404).json({
+                success: false,
+                message: 'Rental request not found'
+            });
+        }
+        
+        // Delete the request
+        db.run('DELETE FROM rental_requests WHERE id = ?', [id], function(err) {
+            if (err) {
+                console.error('Error deleting rental request:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Failed to delete rental request'
+                });
+            }
+            
+            res.json({
+                success: true,
+                message: 'Rental request deleted successfully'
+            });
+        });
+    });
 });
 
 // 3. Get all bicycles (Admin)

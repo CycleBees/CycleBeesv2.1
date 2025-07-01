@@ -8,7 +8,8 @@ import {
   RefreshControl,
   Alert,
   Dimensions,
-  Platform
+  Platform,
+  Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,13 +18,35 @@ import { useRouter } from 'expo-router';
 
 interface RepairRequest {
   id: number;
-  services: string[];
-  total_amount: number;
-  status: string;
-  created_at: string;
+  contact_number: string;
+  alternate_number?: string;
+  email?: string;
+  notes?: string;
+  address?: string;
   preferred_date: string;
-  preferred_time_slot: string;
-  notes: string;
+  time_slot_id: number;
+  total_amount: number;
+  payment_method: string;
+  status: string;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+  start_time: string;
+  end_time: string;
+  services?: Array<{
+    id: number;
+    name: string;
+    description: string;
+    special_instructions: string;
+    price: number;
+    discount_amount: number;
+  }>;
+  files?: Array<{
+    id: number;
+    file_url: string;
+    file_type: string;
+    display_order: number;
+  }>;
 }
 
 interface RentalRequest {
@@ -47,9 +70,21 @@ export default function MyRequestsScreen() {
   const [rentalRequests, setRentalRequests] = useState<RentalRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Request details modal
+  const [selectedRepairRequest, setSelectedRepairRequest] = useState<RepairRequest | null>(null);
+  const [selectedRentalRequest, setSelectedRentalRequest] = useState<RentalRequest | null>(null);
+  const [showRequestModal, setShowRequestModal] = useState(false);
 
   useEffect(() => {
     fetchRequests();
+    
+    // Auto-refresh every 30 seconds to update countdown and check status changes
+    const interval = setInterval(() => {
+      fetchRequests();
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, [activeTab]);
 
   const fetchRequests = async () => {
@@ -67,7 +102,10 @@ export default function MyRequestsScreen() {
         
         if (response.ok) {
           const data = await response.json();
-          setRepairRequests(data);
+          // Backend returns { success: true, data: [...] }
+          setRepairRequests(data.success && data.data ? data.data : []);
+        } else {
+          setRepairRequests([]);
         }
       } else {
         const response = await fetch('http://localhost:3000/api/rental/requests', {
@@ -79,11 +117,20 @@ export default function MyRequestsScreen() {
         
         if (response.ok) {
           const data = await response.json();
-          setRentalRequests(data);
+          // Backend returns { success: true, data: [...] }
+          setRentalRequests(data.success && data.data ? data.data : []);
+        } else {
+          setRentalRequests([]);
         }
       }
     } catch (error) {
       console.error('Error fetching requests:', error);
+      // Set empty arrays on error to prevent map errors
+      if (activeTab === 'repair') {
+        setRepairRequests([]);
+      } else {
+        setRentalRequests([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -134,6 +181,37 @@ export default function MyRequestsScreen() {
     }
   };
 
+  const getTimeRemaining = (expiresAt: string) => {
+    const now = new Date();
+    const expiry = new Date(expiresAt);
+    const diff = expiry.getTime() - now.getTime();
+    
+    if (diff <= 0) return 'Expired';
+    
+    const minutes = Math.floor(diff / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    return `${minutes}m ${seconds}s remaining`;
+  };
+
+  const openRepairRequestDetails = (request: RepairRequest) => {
+    setSelectedRepairRequest(request);
+    setSelectedRentalRequest(null);
+    setShowRequestModal(true);
+  };
+
+  const openRentalRequestDetails = (request: RentalRequest) => {
+    setSelectedRentalRequest(request);
+    setSelectedRepairRequest(null);
+    setShowRequestModal(true);
+  };
+
+  const closeRequestModal = () => {
+    setShowRequestModal(false);
+    setSelectedRepairRequest(null);
+    setSelectedRentalRequest(null);
+  };
+
   const renderRepairRequests = () => (
     <ScrollView
       style={styles.requestsList}
@@ -141,7 +219,7 @@ export default function MyRequestsScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
     >
-      {repairRequests.length === 0 ? (
+      {!Array.isArray(repairRequests) || repairRequests.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="construct-outline" size={60} color="#4A4A4A" />
           <Text style={styles.emptyStateTitle}>No Repair Requests</Text>
@@ -156,69 +234,93 @@ export default function MyRequestsScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        repairRequests.map((request) => (
-          <View key={request.id} style={styles.requestCard}>
-            <View style={styles.requestHeader}>
-              <View style={styles.requestId}>
-                <Text style={styles.requestIdText}>Repair #{request.id}</Text>
-                <Text style={styles.requestDate}>
-                  {new Date(request.created_at).toLocaleDateString()}
-                </Text>
-              </View>
-              <View style={[
-                styles.statusBadge,
-                { backgroundColor: getStatusColor(request.status) }
-              ]}>
-                <Ionicons 
-                  name={getStatusIcon(request.status) as any} 
-                  size={16} 
-                  color="#fff" 
-                />
-                <Text style={styles.statusText}>
-                  {getStatusText(request.status)}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.requestDetails}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Services:</Text>
-                <Text style={styles.detailValue}>
-                  {request.services.join(', ')}
-                </Text>
-              </View>
-              
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Total Amount:</Text>
-                <Text style={styles.detailValue}>₹{request.total_amount}</Text>
-              </View>
-              
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Preferred Date:</Text>
-                <Text style={styles.detailValue}>{request.preferred_date}</Text>
-              </View>
-              
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Time Slot:</Text>
-                <Text style={styles.detailValue}>{request.preferred_time_slot}</Text>
-              </View>
-              
-              {request.notes && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Notes:</Text>
-                  <Text style={styles.detailValue}>{request.notes}</Text>
+        <View style={styles.requestsGrid}>
+          {repairRequests.map((request) => (
+            <TouchableOpacity
+              key={request.id}
+              style={styles.requestCardCompact}
+              onPress={() => openRepairRequestDetails(request)}
+            >
+              <View style={styles.requestCardHeader}>
+                <Text style={styles.requestId}>#{request.id}</Text>
+                <View style={[
+                  styles.statusBadgeCompact,
+                  { backgroundColor: getStatusColor(request.status) }
+                ]}>
+                  <Ionicons 
+                    name={getStatusIcon(request.status) as any} 
+                    size={12} 
+                    color="#fff" 
+                  />
+                  <Text style={styles.statusTextCompact}>
+                    {getStatusText(request.status)}
+                  </Text>
                 </View>
-              )}
-            </View>
-
-            {request.status === 'waiting_payment' && (
-              <TouchableOpacity style={styles.paymentButton}>
-                <Ionicons name="card-outline" size={20} color="#fff" />
-                <Text style={styles.paymentButtonText}>Make Payment</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ))
+              </View>
+              
+              <View style={styles.requestCardContent}>
+                <View style={styles.requestSummary}>
+                  <Text style={styles.requestAmount}>₹{request.total_amount}</Text>
+                  <Text style={styles.requestDate}>{request.preferred_date}</Text>
+                </View>
+                
+                <View style={styles.requestMeta}>
+                  <Text style={styles.requestTime}>{request.start_time} - {request.end_time}</Text>
+                  <Text style={styles.requestPayment}>{request.payment_method}</Text>
+                </View>
+                
+                {request.address && (
+                  <View style={styles.addressContainer}>
+                    <Ionicons name="location-outline" size={12} color="#4A4A4A" />
+                    <Text style={styles.addressText} numberOfLines={1}>
+                      {request.address}
+                    </Text>
+                  </View>
+                )}
+                
+                {/* Media Files Display */}
+                {request.files && request.files.length > 0 && (
+                  <View style={styles.mediaContainer}>
+                    <View style={styles.mediaHeader}>
+                      <Ionicons name="images-outline" size={12} color="#4A4A4A" />
+                      <Text style={styles.mediaCount}>
+                        {request.files.filter(f => f.file_type === 'image').length} photos, 
+                        {request.files.filter(f => f.file_type === 'video').length} video
+                      </Text>
+                    </View>
+                    <View style={styles.mediaPreview}>
+                      {request.files.slice(0, 3).map((file, index) => (
+                        <View key={file.id} style={styles.mediaItem}>
+                          {file.file_type === 'image' ? (
+                            <View style={styles.imageThumbnail}>
+                              <Text style={styles.mediaText}>📷</Text>
+                            </View>
+                          ) : (
+                            <View style={styles.videoThumbnail}>
+                              <Text style={styles.mediaText}>🎥</Text>
+                            </View>
+                          )}
+                        </View>
+                      ))}
+                      {request.files.length > 3 && (
+                        <View style={styles.mediaMore}>
+                          <Text style={styles.mediaMoreText}>+{request.files.length - 3}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
+                
+                {request.status === 'pending' && request.expires_at && (
+                  <View style={styles.expiryContainer}>
+                    <Ionicons name="time-outline" size={12} color="#ffc107" />
+                    <Text style={styles.expiryText}>{getTimeRemaining(request.expires_at)}</Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
       )}
     </ScrollView>
   );
@@ -230,7 +332,7 @@ export default function MyRequestsScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
     >
-      {rentalRequests.length === 0 ? (
+      {!Array.isArray(rentalRequests) || rentalRequests.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="bicycle-outline" size={60} color="#4A4A4A" />
           <Text style={styles.emptyStateTitle}>No Rental Requests</Text>
@@ -241,71 +343,57 @@ export default function MyRequestsScreen() {
             style={styles.emptyStateButton}
             onPress={() => router.push('/book-rental')}
           >
-            <Text style={styles.emptyStateButtonText}>Rent Your First Bicycle</Text>
+            <Text style={styles.emptyStateButtonText}>Book Your First Rental</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        rentalRequests.map((request) => (
-          <View key={request.id} style={styles.requestCard}>
-            <View style={styles.requestHeader}>
-              <View style={styles.requestId}>
-                <Text style={styles.requestIdText}>Rental #{request.id}</Text>
-                <Text style={styles.requestDate}>
-                  {new Date(request.created_at).toLocaleDateString()}
-                </Text>
-              </View>
-              <View style={[
-                styles.statusBadge,
-                { backgroundColor: getStatusColor(request.status) }
-              ]}>
-                <Ionicons 
-                  name={getStatusIcon(request.status) as any} 
-                  size={16} 
-                  color="#fff" 
-                />
-                <Text style={styles.statusText}>
-                  {getStatusText(request.status)}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.requestDetails}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Bicycle:</Text>
-                <Text style={styles.detailValue}>{request.bicycle_name}</Text>
+        <View style={styles.requestsGrid}>
+          {rentalRequests.map((request) => (
+            <TouchableOpacity
+              key={request.id}
+              style={styles.requestCardCompact}
+              onPress={() => openRentalRequestDetails(request)}
+            >
+              <View style={styles.requestCardHeader}>
+                <Text style={styles.requestId}>#{request.id}</Text>
+                <View style={[
+                  styles.statusBadgeCompact,
+                  { backgroundColor: getStatusColor(request.status) }
+                ]}>
+                  <Ionicons 
+                    name={getStatusIcon(request.status) as any} 
+                    size={12} 
+                    color="#fff" 
+                  />
+                  <Text style={styles.statusTextCompact}>
+                    {getStatusText(request.status)}
+                  </Text>
+                </View>
               </View>
               
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Duration:</Text>
-                <Text style={styles.detailValue}>
-                  {request.duration} {request.duration_type === 'daily' ? 'Day(s)' : 'Week(s)'}
-                </Text>
+              <View style={styles.requestCardContent}>
+                <View style={styles.requestSummary}>
+                  <Text style={styles.requestAmount}>₹{request.total_amount}</Text>
+                  <Text style={styles.requestDateCompact}>
+                    {new Date(request.created_at).toLocaleDateString()}
+                  </Text>
+                </View>
+                
+                <View style={styles.requestMeta}>
+                  <Text style={styles.requestTime}>{request.bicycle_name}</Text>
+                  <Text style={styles.requestPayment}>{request.duration} {request.duration_type === 'daily' ? 'Day(s)' : 'Week(s)'}</Text>
+                </View>
+                
+                {request.status === 'pending' && (
+                  <View style={styles.expiryContainer}>
+                    <Ionicons name="time-outline" size={12} color="#ffc107" />
+                    <Text style={styles.expiryText}>Pending approval</Text>
+                  </View>
+                )}
               </View>
-              
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Total Amount:</Text>
-                <Text style={styles.detailValue}>₹{request.total_amount}</Text>
-              </View>
-              
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Delivery Address:</Text>
-                <Text style={styles.detailValue}>{request.delivery_address}</Text>
-              </View>
-              
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Delivery Charge:</Text>
-                <Text style={styles.detailValue}>₹{request.delivery_charge}</Text>
-              </View>
-            </View>
-
-            {request.status === 'waiting_payment' && (
-              <TouchableOpacity style={styles.paymentButton}>
-                <Ionicons name="card-outline" size={20} color="#fff" />
-                <Text style={styles.paymentButtonText}>Make Payment</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ))
+            </TouchableOpacity>
+          ))}
+        </View>
       )}
     </ScrollView>
   );
@@ -357,6 +445,135 @@ export default function MyRequestsScreen() {
       </View>
 
       {activeTab === 'repair' ? renderRepairRequests() : renderRentalRequests()}
+
+      {showRequestModal && (
+        <Modal
+          visible={showRequestModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={closeRequestModal}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  {selectedRepairRequest ? 'Repair Request Details' : 'Rental Request Details'}
+                </Text>
+                <TouchableOpacity onPress={closeRequestModal}>
+                  <Ionicons name="close" size={24} color="#4A4A4A" />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView style={styles.modalScroll}>
+                {selectedRepairRequest && (
+                  <View>
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Request Information</Text>
+                      <Text style={styles.modalDetail}>Request ID: #{selectedRepairRequest.id}</Text>
+                      <Text style={styles.modalDetail}>Status: {getStatusText(selectedRepairRequest.status)}</Text>
+                      <Text style={styles.modalDetail}>Total Amount: ₹{selectedRepairRequest.total_amount}</Text>
+                      <Text style={styles.modalDetail}>Payment Method: {selectedRepairRequest.payment_method}</Text>
+                    </View>
+                    
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Contact Information</Text>
+                      <Text style={styles.modalDetail}>Phone: {selectedRepairRequest.contact_number}</Text>
+                      {selectedRepairRequest.alternate_number && (
+                        <Text style={styles.modalDetail}>Alternate: {selectedRepairRequest.alternate_number}</Text>
+                      )}
+                      {selectedRepairRequest.email && (
+                        <Text style={styles.modalDetail}>Email: {selectedRepairRequest.email}</Text>
+                      )}
+                      {selectedRepairRequest.address && (
+                        <Text style={styles.modalDetail}>Address: {selectedRepairRequest.address}</Text>
+                      )}
+                    </View>
+                    
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Service Details</Text>
+                      <Text style={styles.modalDetail}>Preferred Date: {selectedRepairRequest.preferred_date}</Text>
+                      <Text style={styles.modalDetail}>Time Slot: {selectedRepairRequest.start_time} - {selectedRepairRequest.end_time}</Text>
+                      {selectedRepairRequest.notes && (
+                        <Text style={styles.modalDetail}>Notes: {selectedRepairRequest.notes}</Text>
+                      )}
+                    </View>
+                    
+                    {/* Media Files Display */}
+                    {selectedRepairRequest.files && selectedRepairRequest.files.length > 0 && (
+                      <View style={styles.modalSection}>
+                        <Text style={styles.modalSectionTitle}>Media Files</Text>
+                        <View style={styles.modalMediaGrid}>
+                          {selectedRepairRequest.files.map((file, index) => (
+                            <View key={file.id} style={styles.modalMediaItem}>
+                              {file.file_type === 'image' ? (
+                                <View style={styles.modalImageThumbnail}>
+                                  <Text style={styles.modalMediaText}>📷</Text>
+                                  <Text style={styles.modalMediaLabel}>Photo {index + 1}</Text>
+                                </View>
+                              ) : (
+                                <View style={styles.modalVideoThumbnail}>
+                                  <Text style={styles.modalMediaText}>🎥</Text>
+                                  <Text style={styles.modalMediaLabel}>Video</Text>
+                                </View>
+                              )}
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                    
+                    {selectedRepairRequest.status === 'pending' && selectedRepairRequest.expires_at && (
+                      <View style={styles.modalSection}>
+                        <Text style={styles.modalSectionTitle}>Request Expiry</Text>
+                        <Text style={[styles.modalDetail, { color: '#ffc107', fontWeight: 'bold' }]}>
+                          {getTimeRemaining(selectedRepairRequest.expires_at)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+                
+                {selectedRentalRequest && (
+                  <View>
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Request Information</Text>
+                      <Text style={styles.modalDetail}>Request ID: #{selectedRentalRequest.id}</Text>
+                      <Text style={styles.modalDetail}>Status: {getStatusText(selectedRentalRequest.status)}</Text>
+                      <Text style={styles.modalDetail}>Total Amount: ₹{selectedRentalRequest.total_amount}</Text>
+                    </View>
+                    
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Bicycle Details</Text>
+                      <Text style={styles.modalDetail}>Bicycle: {selectedRentalRequest.bicycle_name}</Text>
+                      <Text style={styles.modalDetail}>Duration: {selectedRentalRequest.duration} {selectedRentalRequest.duration_type === 'daily' ? 'Day(s)' : 'Week(s)'}</Text>
+                      <Text style={styles.modalDetail}>Delivery Charge: ₹{selectedRentalRequest.delivery_charge}</Text>
+                    </View>
+                    
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Delivery Information</Text>
+                      <Text style={styles.modalDetail}>Delivery Address: {selectedRentalRequest.delivery_address}</Text>
+                    </View>
+                    
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Request Date</Text>
+                      <Text style={styles.modalDetail}>
+                        {new Date(selectedRentalRequest.created_at).toLocaleDateString()} at {new Date(selectedRentalRequest.created_at).toLocaleTimeString()}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </ScrollView>
+              
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={closeRequestModal}
+              >
+                <Text style={styles.closeButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -501,19 +718,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4A4A4A',
   },
+  requestDateCompact: {
+    fontSize: 14,
+    color: '#4A4A4A',
+  },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  statusBadgeCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
   statusText: {
+    color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
+    marginLeft: 4,
+  },
+  statusTextCompact: {
     color: '#fff',
-    textTransform: 'uppercase',
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginLeft: 2,
   },
   requestDetails: {
     marginBottom: 15,
@@ -550,5 +784,228 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  requestsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  requestCardCompact: {
+    width: '48%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
+  },
+  requestCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  requestCardContent: {
+    flexDirection: 'column',
+  },
+  requestSummary: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  requestAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+  },
+  requestMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  requestTime: {
+    fontSize: 14,
+    color: '#4A4A4A',
+  },
+  requestPayment: {
+    fontSize: 14,
+    color: '#4A4A4A',
+  },
+  expiryContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  expiryText: {
+    fontSize: 14,
+    color: '#ffc107',
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 10,
+    width: '80%',
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+  },
+  modalScroll: {
+    flex: 1,
+  },
+  modalSection: {
+    marginBottom: 15,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modalSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginBottom: 8,
+  },
+  modalDetail: {
+    fontSize: 14,
+    color: '#4A4A4A',
+    marginBottom: 5,
+  },
+  closeButton: {
+    backgroundColor: '#28a745',
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  addressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  addressText: {
+    fontSize: 14,
+    color: '#4A4A4A',
+    marginLeft: 4,
+  },
+  mediaContainer: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+  },
+  mediaHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  mediaCount: {
+    fontSize: 12,
+    color: '#4A4A4A',
+  },
+  mediaPreview: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  mediaItem: {
+    width: '30%',
+    aspectRatio: 1,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  imageThumbnail: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+  },
+  videoThumbnail: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+  },
+  mediaText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4A4A4A',
+  },
+  mediaMore: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+  },
+  mediaMoreText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#4A4A4A',
+  },
+  modalMediaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  modalMediaItem: {
+    width: '48%',
+    aspectRatio: 1,
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  modalImageThumbnail: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+  },
+  modalVideoThumbnail: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+  },
+  modalMediaText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4A4A4A',
+  },
+  modalMediaLabel: {
+    fontSize: 12,
+    color: '#4A4A4A',
   },
 }); 
