@@ -589,7 +589,8 @@ router.post('/requests', authenticateToken, requireUser, [
     body('durationType').isIn(['daily', 'weekly']).withMessage('Valid duration type is required'),
     body('durationCount').isInt({ min: 1 }).withMessage('Valid duration count is required'),
     body('paymentMethod').isIn(['online', 'offline']).withMessage('Valid payment method is required'),
-    body('totalAmount').isFloat({ min: 0 }).withMessage('Valid total amount is required')
+    body('totalAmount').isFloat({ min: 0 }).withMessage('Valid total amount is required'),
+    body('email').optional().isEmail().withMessage('Valid email format is required')
 ], (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -604,44 +605,153 @@ router.post('/requests', authenticateToken, requireUser, [
         bicycleId,
         contactNumber,
         alternateNumber,
+        email,
         deliveryAddress,
         specialInstructions,
         durationType,
         durationCount,
         paymentMethod,
-        totalAmount
+        totalAmount,
+        couponCode
     } = req.body;
     
     // Calculate expiry time (15 minutes from now)
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     
-    db.run(
-        `INSERT INTO rental_requests (
-            user_id, bicycle_id, contact_number, alternate_number, delivery_address,
-            special_instructions, duration_type, duration_count, total_amount,
-            payment_method, expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-            req.user.userId, bicycleId, contactNumber, alternateNumber, deliveryAddress,
-            specialInstructions, durationType, durationCount, totalAmount,
-            paymentMethod, expiresAt.toISOString()
-        ],
-        function(err) {
-            if (err) {
-                console.error('Error creating rental request:', err);
-                return res.status(500).json({
-                    success: false,
-                    message: 'Failed to create rental request'
-                });
+    // Start transaction
+    db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
+        
+        // Insert rental request
+        db.run(
+            `INSERT INTO rental_requests (
+                user_id, bicycle_id, contact_number, alternate_number, email, delivery_address,
+                special_instructions, duration_type, duration_count, total_amount,
+                payment_method, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                req.user.userId, bicycleId, contactNumber, alternateNumber || null, email || null, deliveryAddress,
+                specialInstructions || null, durationType, durationCount, totalAmount,
+                paymentMethod, expiresAt.toISOString()
+            ],
+            function(err) {
+                if (err) {
+                    console.error('Error creating rental request:', err);
+                    db.run('ROLLBACK');
+                    return res.status(500).json({
+                        success: false,
+                        message: 'Failed to create rental request'
+                    });
+                }
+                
+                const requestId = this.lastID;
+                
+                // Apply coupon if provided
+                if (couponCode) {
+                    // Get coupon details
+                    db.get('SELECT * FROM coupons WHERE code = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)', [couponCode], (err, coupon) => {
+                        if (err) {
+                            console.error('Error fetching coupon:', err);
+                            db.run('ROLLBACK');
+                            return res.status(500).json({
+                                success: false,
+                                message: 'Failed to apply coupon'
+                            });
+                        }
+                        
+                        if (!coupon) {
+                            db.run('ROLLBACK');
+                            return res.status(400).json({
+                                success: false,
+                                message: 'Invalid or expired coupon'
+                            });
+                        }
+                        
+                        // Check usage limit
+                        if (coupon.used_count >= coupon.usage_limit) {
+                            db.run('ROLLBACK');
+                            return res.status(400).json({
+                                success: false,
+                                message: 'Coupon usage limit exceeded'
+                            });
+                        }
+                        
+                        // Check if user has already used this coupon
+                        db.get('SELECT COUNT(*) as count FROM coupon_usage WHERE coupon_id = ? AND user_id = ?', [coupon.id, req.user.userId], (err, usage) => {
+                            if (err) {
+                                console.error('Error checking coupon usage:', err);
+                                db.run('ROLLBACK');
+                                return res.status(500).json({
+                                    success: false,
+                                    message: 'Failed to check coupon usage'
+                                });
+                            }
+                            
+                            if (usage.count >= coupon.usage_limit) {
+                                db.run('ROLLBACK');
+                                return res.status(400).json({
+                                    success: false,
+                                    message: 'You have already used this coupon'
+                                });
+                            }
+                            
+                            // Calculate discount amount
+                            let discountAmount = 0;
+                            if (coupon.discount_type === 'percentage') {
+                                discountAmount = (totalAmount * coupon.discount_value) / 100;
+                                if (coupon.max_discount) {
+                                    discountAmount = Math.min(discountAmount, coupon.max_discount);
+                                }
+                            } else {
+                                discountAmount = coupon.discount_value;
+                            }
+                            
+                            // Record coupon usage
+                            db.run(
+                                'INSERT INTO coupon_usage (coupon_id, user_id, request_type, request_id, discount_amount) VALUES (?, ?, ?, ?, ?)',
+                                [coupon.id, req.user.userId, 'rental', requestId, discountAmount],
+                                function(err) {
+                                    if (err) {
+                                        console.error('Error recording coupon usage:', err);
+                                        db.run('ROLLBACK');
+                                        return res.status(500).json({
+                                            success: false,
+                                            message: 'Failed to apply coupon'
+                                        });
+                                    }
+                                    
+                                    // Update coupon usage count
+                                    db.run('UPDATE coupons SET used_count = used_count + 1 WHERE id = ?', [coupon.id], (err) => {
+                                        if (err) {
+                                            console.error('Error updating coupon usage count:', err);
+                                        }
+                                        
+                                        db.run('COMMIT');
+                                        res.status(201).json({
+                                            success: true,
+                                            message: 'Rental request created successfully',
+                                            data: { 
+                                                requestId: requestId,
+                                                discountApplied: discountAmount
+                                            }
+                                        });
+                                    });
+                                }
+                            );
+                        });
+                    });
+                } else {
+                    // No coupon, just commit
+                    db.run('COMMIT');
+                    res.status(201).json({
+                        success: true,
+                        message: 'Rental request created successfully',
+                        data: { requestId: requestId }
+                    });
+                }
             }
-            
-            res.status(201).json({
-                success: true,
-                message: 'Rental request created successfully',
-                data: { requestId: this.lastID }
-            });
-        }
-    );
+        );
+    });
 });
 
 // 4. Get user's rental requests (User)

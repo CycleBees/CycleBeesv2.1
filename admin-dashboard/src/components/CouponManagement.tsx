@@ -19,7 +19,9 @@ const CouponManagement: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [couponToDelete, setCouponToDelete] = useState<Coupon | null>(null);
   const [newCoupon, setNewCoupon] = useState({
     code: '',
     discount_type: 'percentage',
@@ -153,7 +155,7 @@ const CouponManagement: React.FC = () => {
         expiry_date: '',
         applicable_items: 'all'
       });
-      setShowCreateForm(false);
+      setShowCreateModal(false);
       fetchCoupons();
       setSuccess('Coupon created successfully');
     } catch (err) {
@@ -161,14 +163,17 @@ const CouponManagement: React.FC = () => {
     }
   };
 
-  const deleteCoupon = async (couponId: number) => {
-    if (!window.confirm('Are you sure you want to delete this coupon?')) {
-      return;
-    }
+  const deleteCoupon = async (coupon: Coupon) => {
+    setCouponToDelete(coupon);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!couponToDelete) return;
 
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/coupon/admin/${couponId}`, {
+      const response = await fetch(`http://localhost:3000/api/coupon/admin/${couponToDelete.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -181,6 +186,9 @@ const CouponManagement: React.FC = () => {
       }
 
       fetchCoupons();
+      setShowDeleteModal(false);
+      setCouponToDelete(null);
+      setSuccess('Coupon deleted successfully');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     }
@@ -190,193 +198,326 @@ const CouponManagement: React.FC = () => {
     return new Date(expiryDate) < new Date();
   };
 
+  const getUsagePercentage = (used: number, limit: number) => {
+    return Math.round((used / limit) * 100);
+  };
+
+  const getApplicableItemsText = (items: string) => {
+    switch (items) {
+      case 'all': return 'All Items';
+      case 'repair_services': return 'Repair Services';
+      case 'rental_bicycles': return 'Rental Bicycles';
+      case 'delivery_charges': return 'Delivery Charges';
+      default: return items;
+    }
+  };
+
   if (loading) return <div className="loading">Loading...</div>;
   if (error) return <div className="error">Error: {error}</div>;
 
   return (
     <div className="coupon-management">
-      <h2>Coupon Management</h2>
-      
-      <div className="coupon-actions">
-        <button onClick={fetchCoupons} className="refresh-btn">
-          🔄 Refresh
-        </button>
-        <button 
-          onClick={() => setShowCreateForm(!showCreateForm)} 
-          className="create-btn"
-        >
-          {showCreateForm ? 'Cancel' : 'Create New Coupon'}
-        </button>
-      </div>
-
-      {showCreateForm && (
-        <div className="create-coupon-form">
-          <h3>Create New Coupon</h3>
-          
-          {error && (
-            <div className="error-message">
-              {error}
-            </div>
-          )}
-          
-          <div className="form-grid">
-            <div className="form-group">
-              <label>Coupon Code: *</label>
-              <input
-                type="text"
-                value={newCoupon.code}
-                onChange={(e) => setNewCoupon({...newCoupon, code: e.target.value})}
-                placeholder="e.g., WELCOME10 (min 3 characters)"
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Discount Type: *</label>
-              <select
-                value={newCoupon.discount_type}
-                onChange={(e) => setNewCoupon({...newCoupon, discount_type: e.target.value})}
-                required
-              >
-                <option value="percentage">Percentage (%)</option>
-                <option value="fixed">Fixed Amount (₹)</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Discount Value: *</label>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={newCoupon.discount_value}
-                onChange={(e) => setNewCoupon({...newCoupon, discount_value: Number(e.target.value)})}
-                placeholder={newCoupon.discount_type === 'percentage' ? '10 (for 10%)' : '100 (for ₹100)'}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Minimum Amount:</label>
-              <input
-                type="number"
-                min="0"
-                value={newCoupon.min_amount}
-                onChange={(e) => setNewCoupon({...newCoupon, min_amount: Number(e.target.value)})}
-                placeholder="0 (no minimum)"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Maximum Discount:</label>
-              <input
-                type="number"
-                min="0"
-                value={newCoupon.max_discount}
-                onChange={(e) => setNewCoupon({...newCoupon, max_discount: Number(e.target.value)})}
-                placeholder="0 (no maximum)"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Usage Limit: *</label>
-              <input
-                type="number"
-                min="1"
-                value={newCoupon.usage_limit}
-                onChange={(e) => setNewCoupon({...newCoupon, usage_limit: Number(e.target.value)})}
-                placeholder="1"
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Expiry Date: *</label>
-              <input
-                type="date"
-                value={newCoupon.expiry_date}
-                onChange={(e) => setNewCoupon({...newCoupon, expiry_date: e.target.value})}
-                min={new Date().toISOString().split('T')[0]}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Applicable Items: *</label>
-              <select
-                value={newCoupon.applicable_items}
-                onChange={(e) => setNewCoupon({...newCoupon, applicable_items: e.target.value})}
-                required
-              >
-                <option value="all">All Items</option>
-                <option value="repair_services">Repair Services</option>
-                <option value="rental_bicycles">Rental Bicycles</option>
-                <option value="delivery_charges">Delivery Charges</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="form-actions">
-            <button onClick={createCoupon} className="submit-btn">
-              Create Coupon
-            </button>
-            <button onClick={() => {
-              setShowCreateForm(false);
-              setError(null); // Clear errors when canceling
-            }} className="cancel-btn">
-              Cancel
-            </button>
-          </div>
+      <div className="page-header">
+        <h2>Coupon Management</h2>
+        <div className="header-actions">
+          <button onClick={fetchCoupons} className="refresh-btn">
+            <span>🔄</span> Refresh
+          </button>
+          <button 
+            onClick={() => setShowCreateModal(true)} 
+            className="add-coupon-btn"
+          >
+            <span>➕</span> Add New Coupon
+          </button>
         </div>
-      )}
+      </div>
 
       {success && (
         <div className="success-message">
-          {success}
+          <span>✅</span> {success}
         </div>
       )}
 
-      <div className="coupons-list">
-        <h3>Existing Coupons</h3>
+      <div className="coupons-overview">
+        <div className="overview-stats">
+          <div className="stat-card">
+            <div className="stat-number">{coupons.length}</div>
+            <div className="stat-label">Total Coupons</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-number">
+              {coupons.filter(c => !isExpired(c.expiry_date)).length}
+            </div>
+            <div className="stat-label">Active Coupons</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-number">
+              {coupons.filter(c => isExpired(c.expiry_date)).length}
+            </div>
+            <div className="stat-label">Expired Coupons</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="coupons-section">
+        <h3>All Coupons</h3>
         {!Array.isArray(coupons) ? (
-          <p>Failed to load coupons.</p>
+          <div className="empty-state">
+            <div className="empty-icon">❌</div>
+            <p>Failed to load coupons.</p>
+          </div>
         ) : coupons.length === 0 ? (
-          <p>No coupons found.</p>
+          <div className="empty-state">
+            <div className="empty-icon">🎫</div>
+            <p>No coupons found.</p>
+            <button 
+              onClick={() => setShowCreateModal(true)} 
+              className="create-first-btn"
+            >
+              Create Your First Coupon
+            </button>
+          </div>
         ) : (
-          coupons.map((coupon) => (
-            <div key={coupon.id} className="coupon-card">
-              <div className="coupon-header">
-                <h4>{coupon.code}</h4>
-                <div className="coupon-status">
-                  {isExpired(coupon.expiry_date) ? (
-                    <span className="status expired">EXPIRED</span>
-                  ) : (
-                    <span className="status active">ACTIVE</span>
-                  )}
+          <div className="coupons-grid">
+            {coupons.map((coupon) => (
+              <div key={coupon.id} className="coupon-card">
+                <div className="coupon-header">
+                  <div className="coupon-code">
+                    <span className="code-text">{coupon.code}</span>
+                    {isExpired(coupon.expiry_date) ? (
+                      <span className="status-badge expired">EXPIRED</span>
+                    ) : (
+                      <span className="status-badge active">ACTIVE</span>
+                    )}
+                  </div>
+                  <div className="coupon-discount">
+                    <span className="discount-value">
+                      {coupon.discount_value}
+                      {coupon.discount_type === 'percentage' ? '%' : '₹'}
+                    </span>
+                    <span className="discount-label">OFF</span>
+                  </div>
+                </div>
+                
+                <div className="coupon-body">
+                  <div className="coupon-details">
+                    <div className="detail-row">
+                      <span className="detail-label">Min Amount:</span>
+                      <span className="detail-value">₹{coupon.min_amount || 0}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Max Discount:</span>
+                      <span className="detail-value">₹{coupon.max_discount || 'No limit'}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Usage:</span>
+                      <span className="detail-value">
+                        {coupon.used_count}/{coupon.usage_limit}
+                        <span className="usage-percentage">
+                          ({getUsagePercentage(coupon.used_count, coupon.usage_limit)}%)
+                        </span>
+                      </span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Expires:</span>
+                      <span className="detail-value">
+                        {new Date(coupon.expiry_date).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="detail-row full-width">
+                      <span className="detail-label">Applicable:</span>
+                      <span className="detail-value">
+                        {getApplicableItemsText(coupon.applicable_items)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="usage-bar">
+                    <div 
+                      className="usage-progress" 
+                      style={{ width: `${getUsagePercentage(coupon.used_count, coupon.usage_limit)}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                <div className="coupon-actions">
+                  <button 
+                    onClick={() => deleteCoupon(coupon)}
+                    className="delete-btn"
+                    title="Delete Coupon"
+                  >
+                    🗑️ Delete
+                  </button>
                 </div>
               </div>
-              
-              <div className="coupon-details">
-                <p><strong>Discount:</strong> {coupon.discount_value}{coupon.discount_type === 'percentage' ? '%' : '₹'}</p>
-                <p><strong>Min Amount:</strong> ₹{coupon.min_amount}</p>
-                <p><strong>Max Discount:</strong> ₹{coupon.max_discount}</p>
-                <p><strong>Usage:</strong> {coupon.used_count}/{coupon.usage_limit}</p>
-                <p><strong>Expires:</strong> {new Date(coupon.expiry_date).toLocaleDateString()}</p>
-                <p><strong>Applicable:</strong> {coupon.applicable_items}</p>
-              </div>
-
-              <div className="coupon-actions">
-                <button 
-                  onClick={() => deleteCoupon(coupon.id)}
-                  className="delete-btn"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
+
+      {/* Create Coupon Modal */}
+      {showCreateModal && (
+        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Create New Coupon</h3>
+              <button className="close-btn" onClick={() => setShowCreateModal(false)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              {error && (
+                <div className="error-message">
+                  <span>⚠️</span> {error}
+                </div>
+              )}
+              
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Coupon Code *</label>
+                  <input
+                    type="text"
+                    value={newCoupon.code}
+                    onChange={(e) => setNewCoupon({...newCoupon, code: e.target.value})}
+                    placeholder="e.g., WELCOME10 (min 3 characters)"
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Discount Type *</label>
+                  <select
+                    value={newCoupon.discount_type}
+                    onChange={(e) => setNewCoupon({...newCoupon, discount_type: e.target.value})}
+                    required
+                  >
+                    <option value="percentage">Percentage (%)</option>
+                    <option value="fixed">Fixed Amount (₹)</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Discount Value *</label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={newCoupon.discount_value}
+                    onChange={(e) => setNewCoupon({...newCoupon, discount_value: Number(e.target.value)})}
+                    placeholder={newCoupon.discount_type === 'percentage' ? '10 (for 10%)' : '100 (for ₹100)'}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Minimum Amount</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newCoupon.min_amount}
+                    onChange={(e) => setNewCoupon({...newCoupon, min_amount: Number(e.target.value)})}
+                    placeholder="0 (no minimum)"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Maximum Discount</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newCoupon.max_discount}
+                    onChange={(e) => setNewCoupon({...newCoupon, max_discount: Number(e.target.value)})}
+                    placeholder="0 (no maximum)"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Usage Limit *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newCoupon.usage_limit}
+                    onChange={(e) => setNewCoupon({...newCoupon, usage_limit: Number(e.target.value)})}
+                    placeholder="1"
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Expiry Date *</label>
+                  <input
+                    type="date"
+                    value={newCoupon.expiry_date}
+                    onChange={(e) => setNewCoupon({...newCoupon, expiry_date: e.target.value})}
+                    min={new Date().toISOString().split('T')[0]}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Applicable Items *</label>
+                  <select
+                    value={newCoupon.applicable_items}
+                    onChange={(e) => setNewCoupon({...newCoupon, applicable_items: e.target.value})}
+                    required
+                  >
+                    <option value="all">All Items</option>
+                    <option value="repair_services">Repair Services</option>
+                    <option value="rental_bicycles">Rental Bicycles</option>
+                    <option value="delivery_charges">Delivery Charges</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button onClick={() => setShowCreateModal(false)} className="cancel-btn">
+                Cancel
+              </button>
+              <button onClick={createCoupon} className="submit-btn">
+                Create Coupon
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && couponToDelete && (
+        <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
+          <div className="modal-content delete-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Delete Coupon</h3>
+              <button className="close-btn" onClick={() => setShowDeleteModal(false)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="delete-warning">
+                <div className="warning-icon">⚠️</div>
+                <p>Are you sure you want to delete this coupon?</p>
+                <div className="coupon-to-delete">
+                  <strong>{couponToDelete.code}</strong>
+                  <span className="coupon-desc">
+                    {couponToDelete.discount_value}
+                    {couponToDelete.discount_type === 'percentage' ? '%' : '₹'} off
+                  </span>
+                </div>
+                <p className="warning-text">
+                  This action cannot be undone. The coupon will be permanently removed.
+                </p>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button onClick={() => setShowDeleteModal(false)} className="cancel-btn">
+                Cancel
+              </button>
+              <button onClick={confirmDelete} className="delete-confirm-btn">
+                Delete Coupon
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

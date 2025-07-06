@@ -28,7 +28,11 @@ interface Bicycle {
   weekly_rate: number;
   delivery_charge: number;
   specifications: string;
-  photos: string[];
+  photos: Array<{
+    id: number;
+    photo_url: string;
+    display_order: number;
+  }>;
 }
 
 interface User {
@@ -63,7 +67,7 @@ export default function BookRentalScreen() {
   const [couponError, setCouponError] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [discount, setDiscount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState<'online' | 'offline'>('online');
+  const [paymentMethod, setPaymentMethod] = useState<'online' | 'offline'>('offline');
 
   useEffect(() => {
     fetchUserProfile();
@@ -130,7 +134,7 @@ export default function BookRentalScreen() {
         return;
       }
       
-      // Prepare items array for rental
+      // Prepare items array for rental - match backend expectations
       const items = ['rental_services', 'delivery_charge'];
       const totalAmount = calculateTotal();
       
@@ -203,32 +207,39 @@ export default function BookRentalScreen() {
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const formDataToSend = new FormData();
       
-      // Add form fields
-      formDataToSend.append('bicycleId', selectedBicycle.id.toString());
-      formDataToSend.append('contactNumber', user?.phone || '');
-      formDataToSend.append('alternateNumber', formData.alternate_number || '');
-      formDataToSend.append('email', formData.email || '');
-      formDataToSend.append('deliveryAddress', formData.delivery_address);
-      formDataToSend.append('specialInstructions', formData.special_instructions || '');
-      formDataToSend.append('durationType', formData.duration_type);
-      formDataToSend.append('durationCount', formData.duration.toString());
-      formDataToSend.append('paymentMethod', paymentMethod);
-      formDataToSend.append('totalAmount', calculateTotalWithDiscount().toString());
-      
-      console.log('Submitting rental request with data:', {
+      // Use JSON instead of FormData to avoid validation issues
+      const requestData: {
+        bicycleId: number;
+        contactNumber: string;
+        alternateNumber: string;
+        email: string;
+        deliveryAddress: string;
+        specialInstructions: string;
+        durationType: 'daily' | 'weekly';
+        durationCount: number;
+        paymentMethod: 'online' | 'offline';
+        totalAmount: number;
+        couponCode?: string;
+      } = {
         bicycleId: selectedBicycle.id,
-        contactNumber: user?.phone,
-        alternateNumber: formData.alternate_number,
-        email: formData.email,
+        contactNumber: user?.phone || '',
+        alternateNumber: formData.alternate_number || '',
+        email: formData.email || '',
         deliveryAddress: formData.delivery_address,
-        specialInstructions: formData.special_instructions,
+        specialInstructions: formData.special_instructions || '',
         durationType: formData.duration_type,
         durationCount: formData.duration,
         paymentMethod: paymentMethod,
         totalAmount: calculateTotalWithDiscount()
-      });
+      };
+      
+      // Add coupon if applied
+      if (appliedCoupon) {
+        requestData.couponCode = appliedCoupon.code;
+      }
+      
+      console.log('Submitting rental request with data:', requestData);
       
       const response = await fetch('http://localhost:3000/api/rental/requests', {
         method: 'POST',
@@ -236,18 +247,7 @@ export default function BookRentalScreen() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          bicycleId: selectedBicycle.id,
-          contactNumber: user?.phone,
-          alternateNumber: formData.alternate_number,
-          email: formData.email,
-          deliveryAddress: formData.delivery_address,
-          specialInstructions: formData.special_instructions,
-          durationType: formData.duration_type,
-          durationCount: formData.duration,
-          paymentMethod: paymentMethod,
-          totalAmount: calculateTotalWithDiscount()
-        })
+        body: JSON.stringify(requestData)
       });
       
       console.log('Response status:', response.status);
@@ -261,24 +261,12 @@ export default function BookRentalScreen() {
         // Reset loading state first
         setLoading(false);
         
-        // Show success message briefly, then navigate
-        Alert.alert(
-          'Success!', 
-          'Rental request submitted successfully! Redirecting to My Requests...',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Smooth transition to My Requests
-                router.replace('/my-requests');
-              }
-            }
-          ]
-        );
+        // Navigate to My Requests with rental tab active
+        router.replace('/my-requests?tab=rental');
         
       } else {
         console.error('Backend error:', data);
-        const errorMessage = data.message || 'Failed to submit rental request';
+        const errorMessage = data.message || data.errors?.map((e: any) => e.msg).join(', ') || 'Failed to submit rental request';
         Alert.alert('Error', errorMessage);
         setLoading(false);
       }
@@ -304,6 +292,38 @@ export default function BookRentalScreen() {
               onPress={() => setSelectedBicycle(bicycle)}
             >
               <View style={styles.bicycleCardContent}>
+                {/* Bicycle Photos */}
+                {bicycle.photos && bicycle.photos.length > 0 && (
+                  <View style={styles.bicyclePhotosContainer}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      {bicycle.photos.map((photo, index) => (
+                        <View key={index} style={styles.photoContainer}>
+                          <Image
+                            source={{ 
+                              uri: photo.photo_url.startsWith('http') 
+                                ? photo.photo_url 
+                                : `http://localhost:3000/${photo.photo_url}`
+                            }}
+                            style={styles.bicyclePhoto}
+                            resizeMode="cover"
+                            onError={() => console.log(`Failed to load photo: ${photo.photo_url}`)}
+                          />
+                        </View>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+                
+                {/* Show placeholder if no photos */}
+                {(!bicycle.photos || bicycle.photos.length === 0) && (
+                  <View style={styles.bicyclePhotosContainer}>
+                    <View style={styles.photoPlaceholder}>
+                      <Ionicons name="bicycle" size={40} color="#ccc" />
+                      <Text style={styles.photoPlaceholderText}>No photos available</Text>
+                    </View>
+                  </View>
+                )}
+                
                 <View style={styles.bicycleCardHeader}>
                   <Text style={styles.bicycleName}>{bicycle.name}</Text>
                   <Text style={styles.bicycleModel}>{bicycle.model}</Text>
@@ -312,6 +332,25 @@ export default function BookRentalScreen() {
                 <Text style={styles.bicycleDescription} numberOfLines={2}>
                   {bicycle.description}
                 </Text>
+                
+                {/* Specifications */}
+                {bicycle.specifications && (
+                  <View style={styles.specificationsContainer}>
+                    <Text style={styles.specificationsTitle}>Specifications:</Text>
+                    {(() => {
+                      try {
+                        const specs = JSON.parse(bicycle.specifications);
+                        return Object.entries(specs).map(([key, value]) => (
+                          <Text key={key} style={styles.specificationItem}>
+                            {key.charAt(0).toUpperCase() + key.slice(1)}: {String(value)}
+                          </Text>
+                        ));
+                      } catch (e) {
+                        return <Text style={styles.specificationItem}>{bicycle.specifications}</Text>;
+                      }
+                    })()}
+                  </View>
+                )}
                 
                 <View style={styles.bicycleRates}>
                   <Text style={styles.rateText}>Daily: ₹{bicycle.daily_rate}</Text>
@@ -329,6 +368,25 @@ export default function BookRentalScreen() {
           );
         })}
       </ScrollView>
+
+      {/* Selected Bicycle Total Preview */}
+      {selectedBicycle && (
+        <View style={styles.totalAmountContainer}>
+          <Text style={styles.totalAmountLabel}>Estimated Total</Text>
+          <View style={styles.amountBreakdown}>
+            <Text style={styles.breakdownText}>
+              Daily Rate: ₹{selectedBicycle.daily_rate} | Weekly Rate: ₹{selectedBicycle.weekly_rate}
+            </Text>
+            <Text style={styles.breakdownText}>
+              Delivery Charge: ₹{selectedBicycle.delivery_charge}
+            </Text>
+            <View style={styles.totalLine} />
+            <Text style={styles.totalAmountText}>
+              Select duration in next step
+            </Text>
+          </View>
+        </View>
+      )}
 
       <View style={styles.stepFooter}>
         <TouchableOpacity
@@ -430,6 +488,26 @@ export default function BookRentalScreen() {
           </View>
         </View>
 
+        {/* Real-time Total Amount Display */}
+        <View style={styles.totalAmountContainer}>
+          <Text style={styles.totalAmountLabel}>Total Amount</Text>
+          <View style={styles.amountBreakdown}>
+            <Text style={styles.breakdownText}>
+              Rate: ₹{formData.duration_type === 'daily' ? (selectedBicycle?.daily_rate || 0) : (selectedBicycle?.weekly_rate || 0)} × {formData.duration} {formData.duration_type === 'daily' ? 'day(s)' : 'week(s)'}
+            </Text>
+            <Text style={styles.breakdownText}>
+              = ₹{(formData.duration_type === 'daily' ? (selectedBicycle?.daily_rate || 0) : (selectedBicycle?.weekly_rate || 0)) * formData.duration}
+            </Text>
+            <Text style={styles.breakdownText}>
+              + Delivery: ₹{selectedBicycle?.delivery_charge || 0}
+            </Text>
+            <View style={styles.totalLine} />
+            <Text style={styles.totalAmountText}>
+              Total: ₹{calculateTotal()}
+            </Text>
+          </View>
+        </View>
+
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Delivery Address</Text>
           <TextInput
@@ -481,9 +559,9 @@ export default function BookRentalScreen() {
       <ScrollView style={styles.summaryContainer}>
         <View style={styles.summarySection}>
           <Text style={styles.summarySectionTitle}>Selected Bicycle</Text>
-          <Text style={styles.summaryText}>Name: {selectedBicycle?.name}</Text>
-          <Text style={styles.summaryText}>Model: {selectedBicycle?.model}</Text>
-          <Text style={styles.summaryText}>Description: {selectedBicycle?.description}</Text>
+          <Text style={styles.summaryText}>Name: {selectedBicycle?.name || ''}</Text>
+          <Text style={styles.summaryText}>Model: {selectedBicycle?.model || ''}</Text>
+          <Text style={styles.summaryText}>Description: {selectedBicycle?.description || ''}</Text>
         </View>
 
         <View style={styles.summarySection}>
@@ -491,22 +569,45 @@ export default function BookRentalScreen() {
           <Text style={styles.summaryText}>
             Duration: {formData.duration} {formData.duration_type === 'daily' ? 'Day(s)' : 'Week(s)'}
           </Text>
-          <Text style={styles.summaryText}>Rate: ₹{formData.duration_type === 'daily' ? selectedBicycle?.daily_rate : selectedBicycle?.weekly_rate}</Text>
-          <Text style={styles.summaryText}>Delivery Charge: ₹{selectedBicycle?.delivery_charge}</Text>
+          <Text style={styles.summaryText}>
+            Rate: ₹{formData.duration_type === 'daily' ? (selectedBicycle?.daily_rate || 0) : (selectedBicycle?.weekly_rate || 0)} per {formData.duration_type === 'daily' ? 'day' : 'week'}
+          </Text>
+          <Text style={styles.summaryText}>Delivery Charge: ₹{selectedBicycle?.delivery_charge || 0}</Text>
+        </View>
+
+        <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Cost Breakdown</Text>
+          <View style={styles.totalBreakdown}>
+            <Text style={styles.totalItem}>
+              Rental Cost: ₹{(formData.duration_type === 'daily' ? (selectedBicycle?.daily_rate || 0) : (selectedBicycle?.weekly_rate || 0)) * formData.duration}
+            </Text>
+            <Text style={styles.totalItem}>
+              Delivery Charge: ₹{selectedBicycle?.delivery_charge || 0}
+            </Text>
+            {appliedCoupon && (
+              <Text style={[styles.totalItem, { color: '#28a745' }]}>
+                Coupon Discount: -₹{discount}
+              </Text>
+            )}
+            <View style={styles.totalLine} />
+            <Text style={styles.totalAmount}>
+              Final Total: ₹{calculateTotalWithDiscount()}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.summarySection}>
           <Text style={styles.summarySectionTitle}>Contact Information</Text>
-          <Text style={styles.summaryText}>Phone: {user?.phone}</Text>
+          <Text style={styles.summaryText}>Phone: {user?.phone || ''}</Text>
           {formData.alternate_number && (
             <Text style={styles.summaryText}>Alternate: {formData.alternate_number}</Text>
           )}
-          <Text style={styles.summaryText}>Email: {formData.email}</Text>
+          <Text style={styles.summaryText}>Email: {formData.email || ''}</Text>
         </View>
 
         <View style={styles.summarySection}>
           <Text style={styles.summarySectionTitle}>Delivery Address</Text>
-          <Text style={styles.summaryText}>{formData.delivery_address}</Text>
+          <Text style={styles.summaryText}>{formData.delivery_address || ''}</Text>
         </View>
 
         {formData.special_instructions && (
@@ -530,6 +631,29 @@ export default function BookRentalScreen() {
               <Text style={styles.applyCouponText}>Apply</Text>
             </TouchableOpacity>
           </View>
+          
+          {/* Test buttons for development */}
+          <View style={styles.testButtonsContainer}>
+            <TouchableOpacity 
+              style={styles.testButton} 
+              onPress={() => {
+                setCoupon('FIRST50');
+                setTimeout(() => applyCoupon(), 100); // Small delay to ensure state is updated
+              }}
+            >
+              <Text style={styles.testButtonText}>Test FIRST50</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.testButton} 
+              onPress={() => {
+                setCoupon('WELCOME10');
+                setTimeout(() => applyCoupon(), 100); // Small delay to ensure state is updated
+              }}
+            >
+              <Text style={styles.testButtonText}>Test WELCOME10</Text>
+            </TouchableOpacity>
+          </View>
+          
           {couponError ? <Text style={styles.couponError}>{couponError}</Text> : null}
           {appliedCoupon && (
             <Text style={styles.couponSuccess}>
@@ -542,27 +666,30 @@ export default function BookRentalScreen() {
           <Text style={styles.summarySectionTitle}>Payment Method</Text>
           <View style={styles.paymentOptionsContainer}>
             <TouchableOpacity
-              style={[styles.paymentOption, paymentMethod === 'online' && styles.paymentOptionSelected]}
-              onPress={() => setPaymentMethod('online')}
+              style={[styles.paymentOption, styles.paymentOptionDisabled]}
+              disabled={true}
             >
-              <Ionicons name={paymentMethod === 'online' ? 'radio-button-on' : 'radio-button-off'} size={20} color="#FFD11E" />
-              <Text style={styles.paymentOptionText}>Online</Text>
+              <Ionicons name="radio-button-off" size={20} color="#ccc" />
+              <Text style={styles.paymentOptionTextDisabled}>Online (Coming Soon)</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.paymentOption, paymentMethod === 'offline' && styles.paymentOptionSelected]}
               onPress={() => setPaymentMethod('offline')}
             >
               <Ionicons name={paymentMethod === 'offline' ? 'radio-button-on' : 'radio-button-off'} size={20} color="#FFD11E" />
-              <Text style={styles.paymentOptionText}>Offline</Text>
+              <Text style={styles.paymentOptionText}>Offline (Cash)</Text>
             </TouchableOpacity>
           </View>
+          <Text style={styles.paymentNotice}>
+            Online payment will be available soon. For now, please use offline payment.
+          </Text>
         </View>
 
         <View style={styles.summarySection}>
           <Text style={styles.summarySectionTitle}>Total Amount</Text>
           <View style={styles.totalBreakdown}>
             <Text style={styles.totalItem}>
-              Rental: ₹{selectedBicycle ? (formData.duration_type === 'daily' ? selectedBicycle.daily_rate : selectedBicycle.weekly_rate) * formData.duration : 0}
+              Rental: ₹{selectedBicycle ? (formData.duration_type === 'daily' ? (selectedBicycle.daily_rate || 0) : (selectedBicycle.weekly_rate || 0)) * formData.duration : 0}
             </Text>
             <Text style={styles.totalItem}>Delivery: ₹{selectedBicycle?.delivery_charge || 0}</Text>
             {discount > 0 && <Text style={styles.totalItem}>Discount: -₹{discount}</Text>}
@@ -943,5 +1070,116 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 8,
+  },
+  bicyclePhotosContainer: {
+    marginBottom: 12,
+  },
+  bicyclePhoto: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+  },
+  photoContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+    marginRight: 8,
+    backgroundColor: '#f8f9fa',
+    overflow: 'hidden',
+  },
+  photoPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+    backgroundColor: '#f8f9fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  photoPlaceholderText: {
+    color: '#ccc',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  specificationsContainer: {
+    marginBottom: 12,
+  },
+  specificationsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginBottom: 8,
+  },
+  specificationItem: {
+    fontSize: 14,
+    color: '#4A4A4A',
+    marginBottom: 4,
+  },
+  testButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  testButton: {
+    backgroundColor: '#FFD11E',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  testButtonText: {
+    color: '#2D3E50',
+    fontWeight: 'bold',
+  },
+  totalAmountContainer: {
+    backgroundColor: '#FFF5CC',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#FFD11E',
+  },
+  totalAmountLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  amountBreakdown: {
+    gap: 8,
+  },
+  breakdownText: {
+    fontSize: 16,
+    color: '#4A4A4A',
+    textAlign: 'center',
+  },
+  totalLine: {
+    height: 1,
+    backgroundColor: '#FFD11E',
+    marginVertical: 8,
+  },
+  totalAmountText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  paymentOptionDisabled: {
+    opacity: 0.5,
+    backgroundColor: '#f8f9fa',
+  },
+  paymentOptionTextDisabled: {
+    fontSize: 16,
+    color: '#ccc',
+    fontWeight: '600',
+  },
+  paymentNotice: {
+    fontSize: 14,
+    color: '#6c757d',
+    fontStyle: 'italic',
+    marginTop: 8,
+    textAlign: 'center',
   },
 }); 

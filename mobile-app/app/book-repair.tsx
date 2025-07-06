@@ -71,7 +71,7 @@ export default function BookRepairScreen() {
   const [couponError, setCouponError] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [discount, setDiscount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState<'online' | 'offline'>('online');
+  const [paymentMethod, setPaymentMethod] = useState<'online' | 'offline'>('offline');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimeSlotPicker, setShowTimeSlotPicker] = useState(false);
 
@@ -267,7 +267,7 @@ export default function BookRepairScreen() {
       Alert.alert('Error', 'Please enter your address');
       return;
     }
-    
+
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
@@ -292,7 +292,7 @@ export default function BookRepairScreen() {
           discountAmount: 0
         }))
       ));
-      
+
       // Add images and video as 'files' - backend expects files array
       images.forEach((imageUri, index) => {
         formDataToSend.append('files', {
@@ -301,7 +301,7 @@ export default function BookRepairScreen() {
           name: `image_${index}.jpg`
         } as any);
       });
-      
+
       if (video) {
         formDataToSend.append('files', {
           uri: video,
@@ -327,7 +327,7 @@ export default function BookRepairScreen() {
         })),
         filesCount: images.length + (video ? 1 : 0)
       });
-      
+
       const response = await fetch('http://localhost:3000/api/repair/requests', {
         method: 'POST',
         headers: {
@@ -339,15 +339,15 @@ export default function BookRepairScreen() {
       
       console.log('Response status:', response.status);
       console.log('Response headers:', response.headers);
-      
+
       const data = await response.json();
       console.log('Response data:', data);
-      
+
       if (response.ok && data.success) {
         console.log('Repair request submitted successfully');
         setLoading(false);
         setTimeout(() => {
-          router.replace('/my-requests');
+          router.replace('/my-requests?tab=repair');
         }, 500);
         return;
       } else {
@@ -664,20 +664,23 @@ export default function BookRepairScreen() {
           <Text style={styles.summarySectionTitle}>Payment Method</Text>
           <View style={styles.paymentOptionsContainer}>
             <TouchableOpacity
-              style={[styles.paymentOption, paymentMethod === 'online' && styles.paymentOptionSelected]}
-              onPress={() => setPaymentMethod('online')}
+              style={[styles.paymentOption, styles.paymentOptionDisabled]}
+              disabled={true}
             >
-              <Ionicons name={paymentMethod === 'online' ? 'radio-button-on' : 'radio-button-off'} size={20} color="#FFD11E" />
-              <Text style={styles.paymentOptionText}>Online</Text>
+              <Ionicons name="radio-button-off" size={20} color="#ccc" />
+              <Text style={styles.paymentOptionTextDisabled}>Online (Coming Soon)</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.paymentOption, paymentMethod === 'offline' && styles.paymentOptionSelected]}
               onPress={() => setPaymentMethod('offline')}
             >
               <Ionicons name={paymentMethod === 'offline' ? 'radio-button-on' : 'radio-button-off'} size={20} color="#FFD11E" />
-              <Text style={styles.paymentOptionText}>Offline</Text>
+              <Text style={styles.paymentOptionText}>Offline (Cash)</Text>
             </TouchableOpacity>
           </View>
+          <Text style={styles.paymentNotice}>
+            Online payment will be available soon. For now, please use offline payment.
+          </Text>
         </View>
 
         <View style={styles.summarySection}>
@@ -1265,5 +1268,21 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  paymentOptionDisabled: {
+    opacity: 0.5,
+    backgroundColor: '#f8f9fa',
+  },
+  paymentOptionTextDisabled: {
+    marginLeft: 8,
+    color: '#ccc',
+    fontWeight: '600',
+  },
+  paymentNotice: {
+    fontSize: 14,
+    color: '#6c757d',
+    fontStyle: 'italic',
+    marginTop: 8,
+    textAlign: 'center',
   },
 }); 

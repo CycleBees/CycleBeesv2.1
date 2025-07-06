@@ -19,6 +19,7 @@ const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
@@ -29,6 +30,7 @@ const UserManagement: React.FC = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
+      setError(null);
       const token = localStorage.getItem('adminToken');
       const response = await fetch('http://localhost:3000/api/dashboard/users', {
         headers: {
@@ -44,9 +46,10 @@ const UserManagement: React.FC = () => {
       const data = await response.json();
       if (data.success && data.data && Array.isArray(data.data.users)) {
         setUsers(data.data.users);
+        setSuccess('Users loaded successfully');
       } else {
         setUsers([]);
-        setError('Invalid data format received');
+        throw new Error('Invalid data format received');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -58,6 +61,7 @@ const UserManagement: React.FC = () => {
 
   const fetchUserDetails = async (userId: number) => {
     try {
+      setError(null);
       const token = localStorage.getItem('adminToken');
       const response = await fetch(`http://localhost:3000/api/dashboard/users/${userId}`, {
         headers: {
@@ -74,7 +78,7 @@ const UserManagement: React.FC = () => {
       if (data.success && data.data && data.data.user) {
         setSelectedUser(data.data.user);
       } else {
-        setError('Invalid user data format received');
+        throw new Error('Invalid user data format received');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -87,35 +91,84 @@ const UserManagement: React.FC = () => {
     user.phone.includes(searchTerm)
   ) : [];
 
-  if (loading) return <div className="loading">Loading...</div>;
-  if (error) return <div className="error">Error: {error}</div>;
+  const getActiveUsers = () => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    return users.filter(user => {
+      if (!user.last_login) return false;
+      return new Date(user.last_login) > thirtyDaysAgo;
+    }).length;
+  };
+
+  const getNewUsers = () => {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    return users.filter(user => new Date(user.created_at) > sevenDaysAgo).length;
+  };
+
+  if (loading && users.length === 0) return <div className="loading">Loading users...</div>;
+  if (error && users.length === 0) return <div className="error">Error: {error}</div>;
 
   return (
     <div className="user-management">
-      <h2>User Management</h2>
-      
-      <div className="user-actions">
-        <button onClick={fetchUsers} className="refresh-btn">
-          🔄 Refresh
-        </button>
-        <div className="search-box">
-          <input
-            type="text"
-            placeholder="Search users by name, email, or phone..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="page-header">
+        <h2>User Management</h2>
+        <div className="header-actions">
+          <button onClick={fetchUsers} className="refresh-btn">
+            <span>🔄</span> Refresh
+          </button>
+          <div className="search-box">
+            <input
+              type="text"
+              placeholder="Search users by name, email, or phone..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
+      {success && (
+        <div className="success-message">
+          <span>✅</span> {success}
+        </div>
+      )}
+
       <div className="users-overview">
-        <h3>Users Overview ({filteredUsers.length} users)</h3>
+        <div className="overview-stats">
+          <div className="stat-card">
+            <div className="stat-number">{users.length}</div>
+            <div className="stat-label">Total Users</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-number">{getActiveUsers()}</div>
+            <div className="stat-label">Active Users</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-number">{getNewUsers()}</div>
+            <div className="stat-label">New Users</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="users-section">
+        <h3>All Users ({filteredUsers.length} users)</h3>
         
-        <div className="users-list">
-          {filteredUsers.length === 0 ? (
-            <p>No users found.</p>
-          ) : (
-            filteredUsers.map((user) => (
+        {!Array.isArray(users) ? (
+          <div className="empty-state">
+            <div className="empty-icon">❌</div>
+            <h3>Failed to load users</h3>
+            <p>There was an error loading the user data.</p>
+          </div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">👥</div>
+            <h3>No Users Found</h3>
+            <p>{searchTerm ? 'No users match your search criteria.' : 'No users have registered yet.'}</p>
+          </div>
+        ) : (
+          <div className="users-grid">
+            {filteredUsers.map((user) => (
               <div key={user.id} className="user-card">
                 <div className="user-header">
                   <div className="user-avatar">
@@ -131,10 +184,30 @@ const UserManagement: React.FC = () => {
                     )}
                   </div>
                   <div className="user-info">
-                    <h4>{user.full_name}</h4>
-                    <p>{user.email}</p>
-                    <p>{user.phone}</p>
+                    <h4 className="user-name">{user.full_name}</h4>
+                    <p className="user-email">{user.email}</p>
+                    <p className="user-phone">{user.phone}</p>
                   </div>
+                </div>
+                
+                <div className="user-stats">
+                  <div className="stat-item">
+                    <span className="stat-label">Repair Requests:</span>
+                    <span className="stat-value">{user.total_repair_requests}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Rental Requests:</span>
+                    <span className="stat-value">{user.total_rental_requests}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Member Since:</span>
+                    <span className="stat-value">
+                      {new Date(user.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="user-actions">
                   <button 
                     onClick={() => fetchUserDetails(user.id)}
                     className="view-details-btn"
@@ -142,39 +215,22 @@ const UserManagement: React.FC = () => {
                     View Details
                   </button>
                 </div>
-                
-                <div className="user-stats">
-                  <div className="stat">
-                    <span className="stat-label">Repair Requests:</span>
-                    <span className="stat-value">{user.total_repair_requests}</span>
-                  </div>
-                  <div className="stat">
-                    <span className="stat-label">Rental Requests:</span>
-                    <span className="stat-value">{user.total_rental_requests}</span>
-                  </div>
-                  <div className="stat">
-                    <span className="stat-label">Member Since:</span>
-                    <span className="stat-value">
-                      {new Date(user.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                </div>
               </div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {selectedUser && (
-        <div className="user-details-modal">
-          <div className="modal-content">
+        <div className="modal-overlay" onClick={() => setSelectedUser(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>User Details - {selectedUser.full_name}</h3>
               <button 
                 onClick={() => setSelectedUser(null)}
                 className="close-btn"
               >
-                ✕
+                ×
               </button>
             </div>
             
@@ -205,7 +261,7 @@ const UserManagement: React.FC = () => {
                   <p>{selectedUser.pincode}</p>
                 </div>
                 
-                <div className="detail-group">
+                <div className="detail-group full-width">
                   <label>Address:</label>
                   <p>{selectedUser.address}</p>
                 </div>

@@ -16,6 +16,8 @@ interface PromotionalCard {
 export default function PromotionalCards() {
   const [cards, setCards] = useState<PromotionalCard[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingCard, setEditingCard] = useState<PromotionalCard | null>(null);
   const [formData, setFormData] = useState({
@@ -36,6 +38,7 @@ export default function PromotionalCards() {
   const fetchCards = async () => {
     try {
       setLoading(true);
+      setError(null);
       const token = localStorage.getItem('adminToken');
       const response = await fetch('http://localhost:3000/api/promotional/admin', {
         headers: {
@@ -47,9 +50,12 @@ export default function PromotionalCards() {
       if (response.ok) {
         const data = await response.json();
         setCards(Array.isArray(data.data?.cards) ? data.data.cards : []);
+      } else {
+        throw new Error('Failed to fetch promotional cards');
       }
     } catch (error) {
       console.error('Error fetching promotional cards:', error);
+      setError(error instanceof Error ? error.message : 'An error occurred');
       setCards([]);
     } finally {
       setLoading(false);
@@ -60,12 +66,13 @@ export default function PromotionalCards() {
     e.preventDefault();
     
     if (!formData.title || !formData.description) {
-      alert('Please fill in all required fields');
+      setError('Please fill in all required fields');
       return;
     }
 
     try {
       setLoading(true);
+      setError(null);
       const token = localStorage.getItem('adminToken');
       const formDataToSend = new FormData();
       
@@ -96,17 +103,17 @@ export default function PromotionalCards() {
       });
 
       if (response.ok) {
-        alert(editingCard ? 'Card updated successfully!' : 'Card created successfully!');
+        setSuccess(editingCard ? 'Card updated successfully!' : 'Card created successfully!');
         setShowForm(false);
         setEditingCard(null);
         resetForm();
         fetchCards();
       } else {
-        const error = await response.json();
-        alert(error.message || 'Failed to save card');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save card');
       }
     } catch (error) {
-      alert('Network error. Please try again.');
+      setError(error instanceof Error ? error.message : 'Network error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -134,6 +141,7 @@ export default function PromotionalCards() {
 
     try {
       setLoading(true);
+      setError(null);
       const token = localStorage.getItem('adminToken');
       const response = await fetch(`http://localhost:3000/api/promotional/admin/${id}`, {
         method: 'DELETE',
@@ -144,14 +152,14 @@ export default function PromotionalCards() {
       });
 
       if (response.ok) {
-        alert('Card deleted successfully!');
+        setSuccess('Card deleted successfully!');
         fetchCards();
       } else {
-        const error = await response.json();
-        alert(error.message || 'Failed to delete card');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete card');
       }
     } catch (error) {
-      alert('Network error. Please try again.');
+      setError(error instanceof Error ? error.message : 'Network error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -176,25 +184,172 @@ export default function PromotionalCards() {
     }
   };
 
+  const isExpired = (endDate: string) => {
+    return new Date(endDate) < new Date();
+  };
+
+  const isActive = (startDate: string, endDate: string, isActive: boolean) => {
+    if (!isActive) return false;
+    const now = new Date();
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    return now >= start && now <= end;
+  };
+
+  if (loading && cards.length === 0) return <div className="loading">Loading promotional cards...</div>;
+  if (error && cards.length === 0) return <div className="error">Error: {error}</div>;
+
   return (
     <div className="promotional-cards">
       <div className="promotional-cards-header">
         <h2>Promotional Cards Management</h2>
-        <button 
-          className="btn btn-primary"
-          onClick={() => {
-            setShowForm(true);
-            setEditingCard(null);
-            resetForm();
-          }}
-        >
-          Add New Card
-        </button>
+        <div className="header-actions">
+          <button onClick={fetchCards} className="refresh-btn">
+            <span>🔄</span> Refresh
+          </button>
+          <button 
+            className="add-card-btn"
+            onClick={() => {
+              setShowForm(true);
+              setEditingCard(null);
+              resetForm();
+            }}
+          >
+            <span>➕</span> Add New Card
+          </button>
+        </div>
       </div>
 
+      {success && (
+        <div className="success-message">
+          <span>✅</span> {success}
+        </div>
+      )}
+
+      <div className="cards-overview">
+        <div className="overview-stats">
+          <div className="stat-card">
+            <div className="stat-number">{cards.length}</div>
+            <div className="stat-label">Total Cards</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-number">
+              {cards.filter(c => isActive(c.startsAt, c.endsAt, c.isActive)).length}
+            </div>
+            <div className="stat-label">Active Cards</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-number">
+              {cards.filter(c => isExpired(c.endsAt)).length}
+            </div>
+            <div className="stat-label">Expired Cards</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="cards-section">
+        <h3>All Promotional Cards</h3>
+        {!Array.isArray(cards) ? (
+          <div className="empty-state">
+            <div className="empty-icon">❌</div>
+            <h3>Failed to load cards</h3>
+            <p>There was an error loading the promotional cards.</p>
+          </div>
+        ) : cards.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">📢</div>
+            <h3>No Promotional Cards</h3>
+            <p>Create your first promotional card to display on the mobile app home screen.</p>
+            <button 
+              className="create-first-btn"
+              onClick={() => {
+                setShowForm(true);
+                setEditingCard(null);
+                resetForm();
+              }}
+            >
+              Create First Card
+            </button>
+          </div>
+        ) : (
+          <div className="cards-grid">
+            {cards.map((card) => (
+              <div key={card.id} className="card-item">
+                <div className="card-image">
+                  {card.imageUrl ? (
+                    <img 
+                      src={`http://localhost:3000/${card.imageUrl}`} 
+                      alt={card.title}
+                    />
+                  ) : (
+                    <div className="no-image">No Image</div>
+                  )}
+                  <div className="card-status">
+                    <span className={`status-badge ${isActive(card.startsAt, card.endsAt, card.isActive) ? 'active' : 'inactive'}`}>
+                      {isActive(card.startsAt, card.endsAt, card.isActive) ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="card-content">
+                  <h3 className="card-title">{card.title}</h3>
+                  <p className="card-description">{card.description}</p>
+                  
+                  <div className="card-details">
+                    <div className="detail-item">
+                      <span className="detail-label">Order:</span>
+                      <span className="detail-value">{card.displayOrder}</span>
+                    </div>
+                    
+                    {card.externalLink && (
+                      <div className="detail-item">
+                        <span className="detail-label">Link:</span>
+                        <a href={card.externalLink} target="_blank" rel="noopener noreferrer" className="detail-link">
+                          View Link
+                        </a>
+                      </div>
+                    )}
+                    
+                    <div className="detail-item">
+                      <span className="detail-label">Start:</span>
+                      <span className="detail-value">
+                        {new Date(card.startsAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    
+                    <div className="detail-item">
+                      <span className="detail-label">End:</span>
+                      <span className="detail-value">
+                        {new Date(card.endsAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card-actions">
+                  <button 
+                    className="btn-secondary btn-sm"
+                    onClick={() => handleEdit(card)}
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    className="btn-danger btn-sm"
+                    onClick={() => handleDelete(card.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Create/Edit Card Modal */}
       {showForm && (
-        <div className="form-overlay">
-          <div className="form-modal">
+        <div className="form-overlay" onClick={() => setShowForm(false)}>
+          <div className="form-modal" onClick={(e) => e.stopPropagation()}>
             <div className="form-header">
               <h3>{editingCard ? 'Edit Promotional Card' : 'Add New Promotional Card'}</h3>
               <button 
@@ -210,6 +365,12 @@ export default function PromotionalCards() {
             </div>
 
             <form onSubmit={handleSubmit} className="promotional-form">
+              {error && (
+                <div className="error-message">
+                  <span>⚠️</span> {error}
+                </div>
+              )}
+
               <div className="form-group">
                 <label>Title *</label>
                 <input
@@ -297,7 +458,7 @@ export default function PromotionalCards() {
               <div className="form-actions">
                 <button 
                   type="button" 
-                  className="btn btn-secondary"
+                  className="btn-secondary"
                   onClick={() => {
                     setShowForm(false);
                     setEditingCard(null);
@@ -308,7 +469,7 @@ export default function PromotionalCards() {
                 </button>
                 <button 
                   type="submit" 
-                  className="btn btn-primary"
+                  className="add-card-btn"
                   disabled={loading}
                 >
                   {loading ? 'Saving...' : (editingCard ? 'Update Card' : 'Create Card')}
@@ -318,91 +479,6 @@ export default function PromotionalCards() {
           </div>
         </div>
       )}
-
-      <div className="cards-grid">
-        {loading ? (
-          <div className="loading">Loading promotional cards...</div>
-        ) : cards.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">📢</div>
-            <h3>No Promotional Cards</h3>
-            <p>Create your first promotional card to display on the mobile app home screen.</p>
-            <button 
-              className="btn btn-primary"
-              onClick={() => {
-                setShowForm(true);
-                setEditingCard(null);
-                resetForm();
-              }}
-            >
-              Create First Card
-            </button>
-          </div>
-        ) : (
-          cards.map((card) => (
-            <div key={card.id} className="card-item">
-              <div className="card-image">
-                {card.imageUrl ? (
-                  <img 
-                    src={`http://localhost:3000/${card.imageUrl}`} 
-                    alt={card.title}
-                  />
-                ) : (
-                  <div className="no-image">No Image</div>
-                )}
-                <div className="card-status">
-                  <span className={`status-badge ${card.isActive ? 'active' : 'inactive'}`}>
-                    {card.isActive ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="card-content">
-                <h3 className="card-title">{card.title}</h3>
-                <p className="card-description">{card.description}</p>
-                
-                <div className="card-details">
-                  <div className="detail-item">
-                    <span className="detail-label">Order:</span>
-                    <span className="detail-value">{card.displayOrder}</span>
-                  </div>
-                  
-                  {card.externalLink && (
-                    <div className="detail-item">
-                      <span className="detail-label">Link:</span>
-                      <a href={card.externalLink} target="_blank" rel="noopener noreferrer" className="detail-link">
-                        View Link
-                      </a>
-                    </div>
-                  )}
-                  
-                  <div className="detail-item">
-                    <span className="detail-label">Schedule:</span>
-                    <span className="detail-value">
-                      {card.startsAt} to {card.endsAt}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="card-actions">
-                  <button 
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => handleEdit(card)}
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    className="btn btn-danger btn-sm"
-                    onClick={() => handleDelete(card.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
     </div>
   );
 } 

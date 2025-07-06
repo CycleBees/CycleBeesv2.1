@@ -47,6 +47,7 @@ const RentalManagement: React.FC = () => {
   const [bicycles, setBicycles] = useState<Bicycle[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   
   // Bicycle management states
   const [showBicycleForm, setShowBicycleForm] = useState(false);
@@ -69,6 +70,20 @@ const RentalManagement: React.FC = () => {
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<RentalRequest | null>(null);
 
+  // Confirmation modals
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDeleteBicycleModal, setShowDeleteBicycleModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    type: 'status' | 'delete' | 'deleteBicycle';
+    requestId?: number;
+    bicycleId?: number;
+    newStatus?: string;
+  } | null>(null);
+
+  // Status filter state
+  const [activeStatusFilter, setActiveStatusFilter] = useState<string>('pending');
+
   useEffect(() => {
     if (activeTab === 'requests') {
       fetchRentalRequests();
@@ -80,6 +95,7 @@ const RentalManagement: React.FC = () => {
   const fetchRentalRequests = async () => {
     try {
       setLoading(true);
+      setError(null);
       const token = localStorage.getItem('adminToken');
       const response = await fetch('http://localhost:3000/api/rental/admin/requests', {
         headers: {
@@ -94,6 +110,7 @@ const RentalManagement: React.FC = () => {
 
       const data = await response.json();
       setRequests(Array.isArray(data.data?.requests) ? data.data.requests : []);
+      setSuccess('Rental requests loaded successfully');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -104,6 +121,7 @@ const RentalManagement: React.FC = () => {
   const fetchBicycles = async () => {
     try {
       setLoading(true);
+      setError(null);
       const token = localStorage.getItem('adminToken');
       const response = await fetch('http://localhost:3000/api/rental/admin/bicycles', {
         headers: {
@@ -127,6 +145,7 @@ const RentalManagement: React.FC = () => {
 
   const updateRequestStatus = async (requestId: number, status: string) => {
     try {
+      setError(null);
       const token = localStorage.getItem('adminToken');
       const response = await fetch(`http://localhost:3000/api/rental/admin/requests/${requestId}/status`, {
         method: 'PATCH',
@@ -141,6 +160,30 @@ const RentalManagement: React.FC = () => {
         throw new Error('Failed to update request status');
       }
 
+      setSuccess(`Request status updated to ${status}`);
+      fetchRentalRequests();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    }
+  };
+
+  const deleteRequest = async (requestId: number) => {
+    try {
+      setError(null);
+      const token = localStorage.getItem('adminToken');
+      const response = await fetch(`http://localhost:3000/api/rental/admin/requests/${requestId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete request');
+      }
+
+      setSuccess('Request deleted successfully');
       fetchRentalRequests();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -150,6 +193,7 @@ const RentalManagement: React.FC = () => {
   const createBicycle = async () => {
     try {
       setUploading(true);
+      setError(null);
       const token = localStorage.getItem('adminToken');
       
       // Create FormData for file upload
@@ -172,7 +216,6 @@ const RentalManagement: React.FC = () => {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
-          // Don't set Content-Type for FormData, let browser set it with boundary
         },
         body: formData
       });
@@ -181,6 +224,7 @@ const RentalManagement: React.FC = () => {
         throw new Error('Failed to create bicycle');
       }
 
+      setSuccess('Bicycle created successfully');
       clearForm();
       fetchBicycles();
     } catch (err) {
@@ -194,6 +238,7 @@ const RentalManagement: React.FC = () => {
     if (!editingBicycle) return;
     
     try {
+      setError(null);
       const token = localStorage.getItem('adminToken');
       const response = await fetch(`http://localhost:3000/api/rental/admin/bicycles/${bicycleId}`, {
         method: 'PUT',
@@ -217,6 +262,7 @@ const RentalManagement: React.FC = () => {
         throw new Error('Failed to update bicycle');
       }
 
+      setSuccess('Bicycle updated successfully');
       setEditingBicycle(null);
       fetchBicycles();
     } catch (err) {
@@ -225,9 +271,8 @@ const RentalManagement: React.FC = () => {
   };
 
   const deleteBicycle = async (bicycleId: number) => {
-    if (!window.confirm('Are you sure you want to delete this bicycle?')) return;
-
     try {
+      setError(null);
       const token = localStorage.getItem('adminToken');
       const response = await fetch(`http://localhost:3000/api/rental/admin/bicycles/${bicycleId}`, {
         method: 'DELETE',
@@ -241,21 +286,68 @@ const RentalManagement: React.FC = () => {
         throw new Error('Failed to delete bicycle');
       }
 
+      setSuccess('Bicycle deleted successfully');
       fetchBicycles();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     }
   };
 
+  const handleStatusChange = (requestId: number, newStatus: string) => {
+    setPendingAction({ type: 'status', requestId, newStatus });
+    setShowStatusModal(true);
+  };
+
+  const handleDeleteRequest = (requestId: number) => {
+    setPendingAction({ type: 'delete', requestId });
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteBicycle = (bicycleId: number) => {
+    setPendingAction({ type: 'deleteBicycle', bicycleId });
+    setShowDeleteBicycleModal(true);
+  };
+
+  const confirmAction = async () => {
+    if (!pendingAction) return;
+
+    if (pendingAction.type === 'status' && pendingAction.requestId && pendingAction.newStatus) {
+      await updateRequestStatus(pendingAction.requestId, pendingAction.newStatus);
+    } else if (pendingAction.type === 'delete' && pendingAction.requestId) {
+      await deleteRequest(pendingAction.requestId);
+    } else if (pendingAction.type === 'deleteBicycle' && pendingAction.bicycleId) {
+      await deleteBicycle(pendingAction.bicycleId);
+    }
+
+    setShowStatusModal(false);
+    setShowDeleteModal(false);
+    setShowDeleteBicycleModal(false);
+    setPendingAction(null);
+  };
+
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'orange';
-      case 'waiting_payment': return 'blue';
-      case 'arranging_delivery': return 'purple';
-      case 'active_rental': return 'green';
-      case 'completed': return 'gray';
-      case 'expired': return 'red';
-      default: return 'black';
+    switch (status.toLowerCase()) {
+      case 'pending': return '#ffc107';
+      case 'approved': return '#28a745';
+      case 'waiting_payment': return '#17a2b8';
+      case 'arranging_delivery': return '#6f42c1';
+      case 'active_rental': return '#28a745';
+      case 'completed': return '#6c757d';
+      case 'expired': return '#dc3545';
+      default: return '#6c757d';
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'pending': return 'Pending';
+      case 'approved': return 'Approved';
+      case 'waiting_payment': return 'Waiting for Payment';
+      case 'arranging_delivery': return 'Arranging Delivery';
+      case 'active_rental': return 'Active Rental';
+      case 'completed': return 'Completed';
+      case 'expired': return 'Expired';
+      default: return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
     }
   };
 
@@ -270,13 +362,11 @@ const RentalManagement: React.FC = () => {
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     
-    // Validate file count (max 5 photos)
     if (selectedFiles.length + files.length > 5) {
       alert('Maximum 5 photos allowed per bicycle');
       return;
     }
     
-    // Validate file types
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
     const invalidFiles = files.filter(file => !validTypes.includes(file.type));
     
@@ -285,8 +375,7 @@ const RentalManagement: React.FC = () => {
       return;
     }
     
-    // Validate file size (max 5MB each)
-    const maxSize = 5 * 1024 * 1024; // 5MB
+    const maxSize = 5 * 1024 * 1024;
     const oversizedFiles = files.filter(file => file.size > maxSize);
     
     if (oversizedFiles.length > 0) {
@@ -317,76 +406,143 @@ const RentalManagement: React.FC = () => {
     setShowBicycleForm(false);
   };
 
-  const openRequestModal = (request: RentalRequest) => {
-    setSelectedRequest(request);
-    setShowRequestModal(true);
-  };
+  const getPendingRequests = () => requests.filter(r => r.status.toLowerCase() === 'pending').length;
+  const getActiveRentals = () => requests.filter(r => r.status.toLowerCase() === 'active_rental').length;
+  const getCompletedRequests = () => requests.filter(r => r.status.toLowerCase() === 'completed').length;
+  const getTotalRequests = () => requests.length;
 
-  const closeRequestModal = () => {
-    setSelectedRequest(null);
-    setShowRequestModal(false);
-  };
-
-  const deleteRequest = async (requestId: number) => {
-    if (!confirm('Are you sure you want to delete this rental request?')) {
-      return;
+  // Filter functions
+  const getFilteredRequests = () => {
+    if (activeStatusFilter === 'all') {
+      return requests;
     }
-    
-    try {
-      const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/rental/admin/requests/${requestId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete rental request');
-      }
-
-      fetchRentalRequests();
-      closeRequestModal();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    }
+    return requests.filter(r => r.status.toLowerCase() === activeStatusFilter);
   };
 
-  if (loading) return <div className="loading">Loading...</div>;
-  if (error) return <div className="error">Error: {error}</div>;
+  const getStatusCount = (status: string) => {
+    return requests.filter(r => r.status.toLowerCase() === status).length;
+  };
+
+  if (loading && requests.length === 0 && bicycles.length === 0) return <div className="loading">Loading...</div>;
+  if (error && requests.length === 0 && bicycles.length === 0) return <div className="error">Error: {error}</div>;
 
   return (
     <div className="rental-management">
+      <div className="page-header">
       <h2>Rental Management</h2>
+        <div className="header-actions">
+          <button onClick={activeTab === 'requests' ? fetchRentalRequests : fetchBicycles} className="refresh-btn">
+            <span>🔄</span> Refresh
+          </button>
+        </div>
+      </div>
+
+      {success && (
+        <div className="success-message">
+          <span>✅</span> {success}
+        </div>
+      )}
       
       <div className="tab-navigation">
         <button 
           className={`tab-btn ${activeTab === 'requests' ? 'active' : ''}`}
           onClick={() => setActiveTab('requests')}
         >
-          Rental Request Management
+          Rental Requests
         </button>
         <button 
           className={`tab-btn ${activeTab === 'inventory' ? 'active' : ''}`}
           onClick={() => setActiveTab('inventory')}
         >
-          Manage Bicycle Inventory
+          Bicycle Inventory
         </button>
       </div>
 
       {activeTab === 'requests' && (
+        <>
+          <div className="requests-overview">
+            <div className="overview-stats">
+              <div className="stat-card">
+                <div className="stat-number">{getTotalRequests()}</div>
+                <div className="stat-label">Total Requests</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-number">{getPendingRequests()}</div>
+                <div className="stat-label">Pending Requests</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-number">{getActiveRentals()}</div>
+                <div className="stat-label">Active Rentals</div>
+              </div>
+            </div>
+          </div>
+
         <div className="requests-section">
-          <h3>Rental Request Management</h3>
-          <button onClick={fetchRentalRequests} className="refresh-btn">
-            🔄 Refresh
+            <div className="status-filter-tabs">
+              <button 
+                className={`status-tab ${activeStatusFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setActiveStatusFilter('all')}
+              >
+                All Requests ({getTotalRequests()})
           </button>
-          
-          <div className="requests-list">
-            {requests.length === 0 ? (
-              <p>No rental requests found.</p>
+              <button 
+                className={`status-tab ${activeStatusFilter === 'pending' ? 'active' : ''}`}
+                onClick={() => setActiveStatusFilter('pending')}
+              >
+                Pending ({getStatusCount('pending')})
+              </button>
+              <button 
+                className={`status-tab ${activeStatusFilter === 'approved' ? 'active' : ''}`}
+                onClick={() => setActiveStatusFilter('approved')}
+              >
+                Approved ({getStatusCount('approved')})
+              </button>
+              <button 
+                className={`status-tab ${activeStatusFilter === 'waiting_payment' ? 'active' : ''}`}
+                onClick={() => setActiveStatusFilter('waiting_payment')}
+              >
+                Waiting Payment ({getStatusCount('waiting_payment')})
+              </button>
+              <button 
+                className={`status-tab ${activeStatusFilter === 'arranging_delivery' ? 'active' : ''}`}
+                onClick={() => setActiveStatusFilter('arranging_delivery')}
+              >
+                Arranging Delivery ({getStatusCount('arranging_delivery')})
+              </button>
+              <button 
+                className={`status-tab ${activeStatusFilter === 'active_rental' ? 'active' : ''}`}
+                onClick={() => setActiveStatusFilter('active_rental')}
+              >
+                Active Rental ({getStatusCount('active_rental')})
+              </button>
+              <button 
+                className={`status-tab ${activeStatusFilter === 'completed' ? 'active' : ''}`}
+                onClick={() => setActiveStatusFilter('completed')}
+              >
+                Completed ({getStatusCount('completed')})
+              </button>
+              <button 
+                className={`status-tab ${activeStatusFilter === 'expired' ? 'active' : ''}`}
+                onClick={() => setActiveStatusFilter('expired')}
+              >
+                Expired ({getStatusCount('expired')})
+              </button>
+            </div>
+            
+            {getFilteredRequests().length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">🚲</div>
+                <h3>No {activeStatusFilter === 'all' ? '' : activeStatusFilter} Requests</h3>
+                <p>
+                  {activeStatusFilter === 'all' 
+                    ? 'No rental requests have been made yet.' 
+                    : `No ${activeStatusFilter} rental requests found.`
+                  }
+                </p>
+              </div>
             ) : (
-              requests.map((request) => (
+              <div className="requests-grid">
+                {getFilteredRequests().map((request) => (
                 <div key={request.id} className="request-card">
                   <div className="request-header">
                     <h4>Request #{request.id}</h4>
@@ -394,103 +550,117 @@ const RentalManagement: React.FC = () => {
                       className="status-badge"
                       style={{ backgroundColor: getStatusColor(request.status) }}
                     >
-                      {request.status.replace('_', ' ').toUpperCase()}
+                        {getStatusText(request.status)}
                     </span>
                   </div>
+                    
+                    <div className="quick-info">
+                      <div className="quick-info-item">
+                        <span className="quick-info-label">Customer</span>
+                        <span className="quick-info-value">{request.user_name}</span>
+                      </div>
+                      <div className="quick-info-item">
+                        <span className="quick-info-label">Amount</span>
+                        <span className="quick-info-value">₹{request.net_amount || request.total_amount}</span>
+                      </div>
+                      <div className="quick-info-item">
+                        <span className="quick-info-label">Bicycle</span>
+                        <span className="quick-info-value">{request.bicycle_name}</span>
+                      </div>
+                      <div className="quick-info-item">
+                        <span className="quick-info-label">Duration</span>
+                        <span className="quick-info-value">{request.duration_count} {request.duration_type}</span>
+                      </div>
+                    </div>
                   
                   <div className="request-summary">
-                    <div className="summary-row">
-                      <span className="summary-label">Customer:</span>
-                      <span className="summary-value">{request.user_name}</span>
-                    </div>
                     <div className="summary-row">
                       <span className="summary-label">Phone:</span>
                       <span className="summary-value">{request.user_phone}</span>
                     </div>
                     <div className="summary-row">
-                      <span className="summary-label">Bicycle:</span>
-                      <span className="summary-value">{request.bicycle_name}</span>
+                        <span className="summary-label">Payment:</span>
+                        <span className="summary-value">{request.payment_method}</span>
                     </div>
                     <div className="summary-row">
-                      <span className="summary-label">Duration:</span>
-                      <span className="summary-value">{request.duration_count} {request.duration_type}</span>
-                    </div>
-                    <div className="summary-row">
-                      <span className="summary-label">Address:</span>
-                      <span className="summary-value" title={request.delivery_address}>
-                        {request.delivery_address.length > 25 ? request.delivery_address.substring(0, 25) + '...' : request.delivery_address}
+                        <span className="summary-label">Date:</span>
+                        <span className="summary-value">
+                          {new Date(request.created_at).toLocaleDateString()}
                       </span>
-                    </div>
-                    <div className="summary-row">
-                      <span className="summary-label">Amount:</span>
-                      <span className="summary-value amount">₹{request.net_amount || request.total_amount}</span>
                     </div>
                   </div>
 
                   <div className="request-actions">
                     <button 
-                      onClick={() => openRequestModal(request)}
+                        onClick={() => setSelectedRequest(request)}
                       className="action-btn view"
                     >
                       View Details
                     </button>
                     
-                    {request.status === 'pending' && (
-                      <>
+                      {request.status.toLowerCase() === 'pending' && (
                         <button 
-                          onClick={() => updateRequestStatus(request.id, 'waiting_payment')}
+                          onClick={() => handleStatusChange(request.id, 'approved')}
                           className="action-btn approve"
                         >
-                          Approve (Online)
+                          Approve
                         </button>
+                      )}
+                      
+                      {request.status.toLowerCase() === 'approved' && (
                         <button 
-                          onClick={() => updateRequestStatus(request.id, 'arranging_delivery')}
-                          className="action-btn approve"
+                          onClick={() => handleStatusChange(request.id, 'arranging_delivery')}
+                          className="action-btn progress"
                         >
-                          Approve (Cash)
+                          Arrange Delivery
                         </button>
+                      )}
+                      
+                      {request.status.toLowerCase() === 'waiting_payment' && (
                         <button 
-                          onClick={() => deleteRequest(request.id)}
-                          className="action-btn delete"
+                          onClick={() => handleStatusChange(request.id, 'arranging_delivery')}
+                          className="action-btn progress"
                         >
-                          Delete
+                          Payment Received
                         </button>
-                      </>
                     )}
-                    {request.status === 'waiting_payment' && (
+                      
+                      {request.status.toLowerCase() === 'arranging_delivery' && (
                       <button 
-                        onClick={() => updateRequestStatus(request.id, 'arranging_delivery')}
-                        className="action-btn approve"
+                          onClick={() => handleStatusChange(request.id, 'active_rental')}
+                          className="action-btn progress"
                       >
-                        Payment Received
+                          Delivered
                       </button>
                     )}
-                    {request.status === 'arranging_delivery' && (
+                      
+                      {request.status.toLowerCase() === 'active_rental' && (
                       <button 
-                        onClick={() => updateRequestStatus(request.id, 'active_rental')}
+                          onClick={() => handleStatusChange(request.id, 'completed')}
                         className="action-btn complete"
                       >
-                        Mark Delivered
+                          Complete
                       </button>
                     )}
-                    {request.status === 'active_rental' && (
+                      
                       <button 
-                        onClick={() => updateRequestStatus(request.id, 'completed')}
-                        className="action-btn complete"
+                        onClick={() => handleDeleteRequest(request.id)}
+                        className="action-btn delete"
                       >
-                        Mark Completed
+                        Delete
                       </button>
-                    )}
                   </div>
                 </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
-        </div>
+        </>
       )}
 
       {activeTab === 'inventory' && (
         <div className="inventory-section">
+          <div className="section-header">
           <h3>Manage Bicycle Inventory</h3>
           <button 
             onClick={() => setShowBicycleForm(!showBicycleForm)} 
@@ -498,6 +668,7 @@ const RentalManagement: React.FC = () => {
           >
             {showBicycleForm ? 'Cancel' : 'Add New Bicycle'}
           </button>
+          </div>
 
           {showBicycleForm && (
             <div className="bicycle-form">
@@ -622,7 +793,7 @@ const RentalManagement: React.FC = () => {
             </div>
           )}
 
-          <div className="bicycles-list">
+          <div className="bicycles-grid">
             {bicycles.map((bicycle) => (
               <div key={bicycle.id} className="bicycle-card">
                 {editingBicycle?.id === bicycle.id ? (
@@ -724,7 +895,7 @@ const RentalManagement: React.FC = () => {
                         Edit
                       </button>
                       <button 
-                        onClick={() => deleteBicycle(bicycle.id)}
+                        onClick={() => handleDeleteBicycle(bicycle.id)}
                         className="delete-btn"
                       >
                         Delete
@@ -738,205 +909,152 @@ const RentalManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Rental Request Details Modal */}
-      {showRequestModal && selectedRequest && (
-        <div className="modal-overlay" onClick={closeRequestModal}>
+      {/* Confirmation Modals */}
+      {showStatusModal && (
+        <div className="modal-overlay" onClick={() => setShowStatusModal(false)}>
+          <div className="modal-content confirmation-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Confirm Status Change</h3>
+              <button className="close-btn" onClick={() => setShowStatusModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to change the status to <strong>{pendingAction?.newStatus}</strong>?</p>
+              <p>This action cannot be undone.</p>
+                </div>
+            <div className="modal-footer">
+              <button className="cancel-btn" onClick={() => setShowStatusModal(false)}>
+                Cancel
+              </button>
+              <button className="confirm-btn" onClick={confirmAction}>
+                Confirm
+              </button>
+              </div>
+                  </div>
+                    </div>
+                  )}
+
+      {showDeleteModal && (
+        <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
+          <div className="modal-content confirmation-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Confirm Deletion</h3>
+              <button className="close-btn" onClick={() => setShowDeleteModal(false)}>×</button>
+                    </div>
+            <div className="modal-body">
+              <div className="warning-icon">⚠️</div>
+              <p>Are you sure you want to delete this rental request?</p>
+              <p><strong>This action cannot be undone.</strong></p>
+                </div>
+            <div className="modal-footer">
+              <button className="cancel-btn" onClick={() => setShowDeleteModal(false)}>
+                Cancel
+              </button>
+              <button className="delete-confirm-btn" onClick={confirmAction}>
+                Delete
+              </button>
+              </div>
+                  </div>
+                    </div>
+                  )}
+
+      {showDeleteBicycleModal && (
+        <div className="modal-overlay" onClick={() => setShowDeleteBicycleModal(false)}>
+          <div className="modal-content confirmation-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Confirm Deletion</h3>
+              <button className="close-btn" onClick={() => setShowDeleteBicycleModal(false)}>×</button>
+                  </div>
+            <div className="modal-body">
+              <div className="warning-icon">⚠️</div>
+              <p>Are you sure you want to delete this bicycle?</p>
+              <p><strong>This action cannot be undone.</strong></p>
+                  </div>
+            <div className="modal-footer">
+              <button className="cancel-btn" onClick={() => setShowDeleteBicycleModal(false)}>
+                Cancel
+              </button>
+              <button className="delete-confirm-btn" onClick={confirmAction}>
+                Delete
+              </button>
+                </div>
+              </div>
+        </div>
+      )}
+
+      {/* Request Details Modal */}
+      {selectedRequest && (
+        <div className="modal-overlay" onClick={() => setSelectedRequest(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Rental Request #{selectedRequest.id}</h3>
-              <button className="close-btn" onClick={closeRequestModal}>×</button>
-            </div>
-            
+              <h3>Rental Request Details</h3>
+              <button className="close-btn" onClick={() => setSelectedRequest(null)}>×</button>
+                  </div>
             <div className="modal-body">
-              {/* Request Status & Timeline */}
-              <div className="detail-section">
-                <h4>Request Status & Timeline</h4>
-                <div className="status-row">
-                  <span className="status-label">Status:</span>
-                  <span 
-                    className="status-badge"
-                    style={{ backgroundColor: getStatusColor(selectedRequest.status) }}
-                  >
-                    {selectedRequest.status.replace('_', ' ').toUpperCase()}
-                  </span>
+              <div className="request-details-grid">
+                <div className="detail-group">
+                  <label>Customer Name:</label>
+                  <p>{selectedRequest.user_name}</p>
+                  </div>
+                <div className="detail-group">
+                  <label>Phone:</label>
+                  <p>{selectedRequest.user_phone}</p>
                 </div>
-                <p><strong>Created:</strong> {new Date(selectedRequest.created_at).toLocaleString()}</p>
-                {selectedRequest.updated_at && (
-                  <p><strong>Last Updated:</strong> {new Date(selectedRequest.updated_at).toLocaleString()}</p>
-                )}
-                {selectedRequest.status === 'pending' && selectedRequest.expires_at && (
-                  <p><strong>Expires:</strong> {new Date(selectedRequest.expires_at).toLocaleString()}</p>
-                )}
+                <div className="detail-group">
+                  <label>Email:</label>
+                  <p>{selectedRequest.email || 'Not provided'}</p>
               </div>
-
-              {/* Customer Information */}
-              <div className="detail-section">
-                <h4>Customer Information</h4>
-                <div className="info-grid">
-                  <div className="info-item">
-                    <span className="info-label">Name:</span>
-                    <span className="info-value">{selectedRequest.user_name}</span>
+                <div className="detail-group">
+                  <label>Bicycle:</label>
+                  <p>{selectedRequest.bicycle_name} {selectedRequest.bicycle_model && `(${selectedRequest.bicycle_model})`}</p>
                   </div>
-                  <div className="info-item">
-                    <span className="info-label">Phone:</span>
-                    <span className="info-value">{selectedRequest.user_phone}</span>
-                  </div>
-                  {selectedRequest.alternate_number && (
-                    <div className="info-item">
-                      <span className="info-label">Alternate:</span>
-                      <span className="info-value">{selectedRequest.alternate_number}</span>
-                    </div>
-                  )}
-                  {selectedRequest.email && (
-                    <div className="info-item">
-                      <span className="info-label">Email:</span>
-                      <span className="info-value">{selectedRequest.email}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Rental Details */}
-              <div className="detail-section">
-                <h4>Rental Details</h4>
-                <div className="info-grid">
-                  <div className="info-item">
-                    <span className="info-label">Bicycle:</span>
-                    <span className="info-value">{selectedRequest.bicycle_name}</span>
-                  </div>
-                  {selectedRequest.bicycle_model && (
-                    <div className="info-item">
-                      <span className="info-label">Model:</span>
-                      <span className="info-value">{selectedRequest.bicycle_model}</span>
-                    </div>
-                  )}
-                  <div className="info-item">
-                    <span className="info-label">Duration:</span>
-                    <span className="info-value">{selectedRequest.duration_count} {selectedRequest.duration_type}</span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">Payment Method:</span>
-                    <span className="info-value">{selectedRequest.payment_method}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Delivery Information */}
-              <div className="detail-section">
-                <h4>Delivery Information</h4>
-                <div className="info-grid">
-                  <div className="info-item full-width">
-                    <span className="info-label">Delivery Address:</span>
-                    <span className="info-value address-text">{selectedRequest.delivery_address}</span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">Delivery Charge:</span>
-                    <span className="info-value">₹{selectedRequest.delivery_charge}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Financial Information */}
-              <div className="detail-section">
-                <h4>Financial Information</h4>
-                <div className="info-grid">
-                  <div className="info-item">
-                    <span className="info-label">Total Amount:</span>
-                    <span className="info-value amount">₹{selectedRequest.total_amount}</span>
-                  </div>
-                  {selectedRequest.coupon_code && (
-                    <>
-                      <div className="info-item">
-                        <span className="info-label">Coupon Applied:</span>
-                        <span className="info-value coupon-code">{selectedRequest.coupon_code}</span>
+                <div className="detail-group">
+                  <label>Duration:</label>
+                  <p>{selectedRequest.duration_count} {selectedRequest.duration_type}{selectedRequest.duration_count > 1 ? 's' : ''}</p>
                       </div>
-                      <div className="info-item">
-                        <span className="info-label">Discount:</span>
-                        <span className="info-value discount">
-                          {selectedRequest.coupon_discount_type === 'percentage' 
-                            ? `${selectedRequest.coupon_discount_value}%`
-                            : `₹${selectedRequest.coupon_discount_value}`
-                          }
-                        </span>
+                <div className="detail-group">
+                  <label>Total Amount:</label>
+                  <p>₹{selectedRequest.total_amount}</p>
                       </div>
-                      <div className="info-item">
-                        <span className="info-label">Discount Amount:</span>
-                        <span className="info-value discount-amount">-₹{selectedRequest.coupon_discount_amount || 0}</span>
+                <div className="detail-group">
+                  <label>Net Amount:</label>
+                  <p>₹{selectedRequest.net_amount}</p>
                       </div>
-                    </>
-                  )}
-                  <div className="info-item">
-                    <span className="info-label">Net Amount:</span>
-                    <span className="info-value net-amount">₹{selectedRequest.net_amount || selectedRequest.total_amount}</span>
+                <div className="detail-group">
+                  <label>Payment Method:</label>
+                  <p>{selectedRequest.payment_method}</p>
                   </div>
+                <div className="detail-group full-width">
+                  <label>Delivery Address:</label>
+                  <p>{selectedRequest.delivery_address}</p>
                 </div>
-              </div>
-
-              {/* Additional Information */}
               {selectedRequest.special_instructions && (
-                <div className="detail-section">
-                  <h4>Special Instructions</h4>
-                  <div className="notes-container">
-                    <p className="notes-text">{selectedRequest.special_instructions}</p>
-                  </div>
+                  <div className="detail-group full-width">
+                    <label>Special Instructions:</label>
+                    <p>{selectedRequest.special_instructions}</p>
                 </div>
               )}
+                {selectedRequest.coupon_code && (
+                  <div className="detail-group">
+                    <label>Coupon Used:</label>
+                    <p>{selectedRequest.coupon_code} (₹{selectedRequest.coupon_discount_amount} off)</p>
             </div>
-            
-            <div className="modal-actions">
-              {selectedRequest.status === 'pending' && (
-                <div className="approval-actions">
-                  {selectedRequest.payment_method === 'online' ? (
-                    <button 
-                      onClick={() => updateRequestStatus(selectedRequest.id, 'waiting_payment')}
-                      className="action-btn approve"
+                )}
+                <div className="detail-group">
+                  <label>Status:</label>
+                  <p>
+                    <span 
+                      className="status-badge"
+                      style={{ backgroundColor: getStatusColor(selectedRequest.status) }}
                     >
-                      Approve (Online Payment)
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => updateRequestStatus(selectedRequest.id, 'arranging_delivery')}
-                      className="action-btn approve"
-                    >
-                      Approve (Cash Payment)
-                    </button>
-                  )}
+                      {getStatusText(selectedRequest.status)}
+                    </span>
+                  </p>
                 </div>
-              )}
-              
-              {selectedRequest.status === 'waiting_payment' && (
-                <button 
-                  onClick={() => updateRequestStatus(selectedRequest.id, 'arranging_delivery')}
-                  className="action-btn approve"
-                >
-                  Payment Received - Start Delivery
-                </button>
-              )}
-              
-              {selectedRequest.status === 'arranging_delivery' && (
-                <button 
-                  onClick={() => updateRequestStatus(selectedRequest.id, 'active_rental')}
-                  className="action-btn complete"
-                >
-                  Mark Delivered
-                </button>
-              )}
-              
-              {selectedRequest.status === 'active_rental' && (
-                <button 
-                  onClick={() => updateRequestStatus(selectedRequest.id, 'completed')}
-                  className="action-btn complete"
-                >
-                  Mark Completed
-                </button>
-              )}
-              
-              <button 
-                onClick={() => deleteRequest(selectedRequest.id)}
-                className="action-btn delete"
-              >
-                Delete Request
-              </button>
+                <div className="detail-group">
+                  <label>Created:</label>
+                  <p>{new Date(selectedRequest.created_at).toLocaleString()}</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

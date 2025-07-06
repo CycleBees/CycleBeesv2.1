@@ -1,4 +1,6 @@
 const http = require('http');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
 
 function makeRequest(options, data = null) {
     return new Promise((resolve, reject) => {
@@ -25,6 +27,80 @@ function makeRequest(options, data = null) {
         req.end();
     });
 }
+
+const dbPath = path.join(__dirname, 'database/cyclebees.db');
+const db = new sqlite3.Database(dbPath);
+
+console.log('Testing rental database structure...');
+
+// Check if email column exists in rental_requests table
+db.get("PRAGMA table_info(rental_requests)", (err, rows) => {
+    if (err) {
+        console.error('Error checking table structure:', err);
+        return;
+    }
+    
+    console.log('Table structure:');
+    db.all("PRAGMA table_info(rental_requests)", (err, columns) => {
+        if (err) {
+            console.error('Error getting columns:', err);
+            return;
+        }
+        
+        columns.forEach(col => {
+            console.log(`- ${col.name}: ${col.type} (${col.notnull ? 'NOT NULL' : 'NULL'})`);
+        });
+        
+        // Test inserting a rental request
+        console.log('\nTesting rental request insertion...');
+        
+        const testData = {
+            user_id: 1,
+            bicycle_id: 2,
+            contact_number: '9862672522',
+            alternate_number: null,
+            email: 'test@example.com',
+            delivery_address: 'Test Address',
+            special_instructions: null,
+            duration_type: 'daily',
+            duration_count: 1,
+            total_amount: 400,
+            payment_method: 'online',
+            expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+        };
+        
+        db.run(
+            `INSERT INTO rental_requests (
+                user_id, bicycle_id, contact_number, alternate_number, email, delivery_address,
+                special_instructions, duration_type, duration_count, total_amount,
+                payment_method, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                testData.user_id, testData.bicycle_id, testData.contact_number, 
+                testData.alternate_number, testData.email, testData.delivery_address,
+                testData.special_instructions, testData.duration_type, testData.duration_count, 
+                testData.total_amount, testData.payment_method, testData.expires_at
+            ],
+            function(err) {
+                if (err) {
+                    console.error('Error inserting test rental request:', err);
+                } else {
+                    console.log('Test rental request inserted successfully with ID:', this.lastID);
+                    
+                    // Clean up test data
+                    db.run('DELETE FROM rental_requests WHERE id = ?', [this.lastID], (err) => {
+                        if (err) {
+                            console.error('Error cleaning up test data:', err);
+                        } else {
+                            console.log('Test data cleaned up successfully');
+                        }
+                        db.close();
+                    });
+                }
+            }
+        );
+    });
+});
 
 async function testRental() {
     console.log('🚲 Testing Cycle-Bees Rental Functionality\n');

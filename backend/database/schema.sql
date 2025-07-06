@@ -130,6 +130,7 @@ CREATE TABLE IF NOT EXISTS rental_requests (
     bicycle_id INTEGER NOT NULL,
     contact_number VARCHAR(15) NOT NULL,
     alternate_number VARCHAR(15),
+    email VARCHAR(100),
     delivery_address TEXT NOT NULL,
     special_instructions TEXT,
     duration_type TEXT NOT NULL CHECK (duration_type IN ('daily', 'weekly')),

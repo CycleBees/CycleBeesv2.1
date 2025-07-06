@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
 interface RepairRequest {
   id: number;
@@ -65,7 +65,10 @@ const { width } = Dimensions.get('window');
 
 export default function MyRequestsScreen() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'repair' | 'rental'>('repair');
+  const params = useLocalSearchParams();
+  const [activeTab, setActiveTab] = useState<'repair' | 'rental'>(
+    (params.tab as string) === 'rental' ? 'rental' : 'repair'
+  );
   const [repairRequests, setRepairRequests] = useState<RepairRequest[]>([]);
   const [rentalRequests, setRentalRequests] = useState<RentalRequest[]>([]);
   const [loading, setLoading] = useState(false);

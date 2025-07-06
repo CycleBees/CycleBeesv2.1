@@ -53,11 +53,7 @@ function App() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('adminToken');
-    setIsLoggedIn(false);
-    setActiveSection('dashboard');
-  };
+  // Logout is now handled in the Sidebar component
 
   const renderContent = () => {
     switch (activeSection) {
@@ -81,9 +77,16 @@ function App() {
   if (!isLoggedIn) {
     return (
       <div className="login-container">
+        <div className="floating-element"></div>
+        <div className="floating-element"></div>
+        <div className="floating-element"></div>
+        <div className="floating-element"></div>
         <div className="login-card">
           <div className="login-header">
-            <h1>🚲 Cycle-Bees</h1>
+            <h1>
+              <span style={{ fontSize: '3rem', display: 'inline-block', marginRight: '0.5rem' }}>🚲</span>
+              Cycle-Bees
+            </h1>
             <h2>Admin Dashboard</h2>
           </div>
           
@@ -129,15 +132,6 @@ function App() {
 
   return (
     <div className="app">
-      <div className="app-header">
-        <div className="header-content">
-          <h1>🚲 Cycle-Bees Admin Dashboard</h1>
-          <button onClick={handleLogout} className="logout-btn">
-            Logout
-          </button>
-        </div>
-      </div>
-      
       <div className="app-body">
         <Sidebar 
           activeSection={activeSection} 

@@ -27,7 +27,7 @@ Preferred tech: App for User (React Native with Expo App), Separate web-dashboar
 5. **Swap to Cloud**
     - Replace mocks with **Supabase Auth/DB/Storage**, **Twilio Verify** and **Razorpay**, and deploy your Express app to Vercel/Heroku.
 
-NOTE: For the first build i want you to setup the “online payment option” and keep place for later razer-pay integration, but for now, will only focus on
+NOTE: For the first build i want you to setup the "online payment option" and keep place for later razer-pay integration, but for now, will only focus on
 
 Step 1
 
@@ -75,28 +75,28 @@ Major Functionalities:
 2. Bicycle Repair Functionality:
     1. Admin POV:
         
-        Admin will have a section in sidebar called, “Repair Section”, this will have two sub sections:
+        Admin will have a section in sidebar called, "Repair Section", this will have two sub sections:
         
-        1. “Repair request management” section:
+        1. "Repair request management" section:
             
             Here admin will be able to manage and perform action over all the repair request with all its associated data that he is getting from the user, by manage and perform action i mean:
             
             1. Approve the Repair request that comes from users - the request will be moved to 
-                1. “Waiting for Payment” status (if online payment is clicked user), after which the user’s repair request will also update to “Waiting for Payment” status too, and then once the amount is paid, the repair request will move “Active” status, after which, the mechanic can visit and complete the work, and then the Request can be marked as “Completed” by the admin, updated on the user side too
-                2. “Active” status (if offline, cash payment is clicked by user), after which, the mechanic can visit and complete the work, and then the Request can be marked as “Completed” by the admin, updated on the user side too
-        2. “Edit Repair categories catalog” section
+                1. "Waiting for Payment" status (if online payment is clicked user), after which the user's repair request will also update to "Waiting for Payment" status too, and then once the amount is paid, the repair request will move "Active" status, after which, the mechanic can visit and complete the work, and then the Request can be marked as "Completed" by the admin, updated on the user side too
+                2. "Active" status (if offline, cash payment is clicked by user), after which, the mechanic can visit and complete the work, and then the Request can be marked as "Completed" by the admin, updated on the user side too
+        2. "Edit Repair categories catalog" section
             
             Here admin will be able to edit the repair catalog that is shown to the user that includes
             
-            1. change the “Service Mechanic Charge” Amount {purchasable item, this can have discount coupons}
-            2. can update the “time slot” that is shown to user while is going through the repair requests, this is to increase or decrease the available time slots timing
-            3. add, edit, update, delete “Repair Service” {Each “Repair Service” will have name, description, special instruction, price {{purchasable item, this can have discount coupons} }
+            1. change the "Service Mechanic Charge" Amount {purchasable item, this can have discount coupons}
+            2. can update the "time slot" that is shown to user while is going through the repair requests, this is to increase or decrease the available time slots timing
+            3. add, edit, update, delete "Repair Service" {Each "Repair Service" will have name, description, special instruction, price {{purchasable item, this can have discount coupons} }
     2. Users POV:
         
-        User will have a section called “Book Repairs”, this will have a UI that beautifully shows the following:
+        User will have a section called "Book Repairs", this will have a UI that beautifully shows the following:
         
         1. Name + Last Name, 
-        2. Drop down section that will show all the list of “Repair Service” available and its price {purchasable item, this can have discount coupons} on the side {note the user can click and add multiple Repair services, and once added, it will be shown in a box that will show name, description, special instruction, price {purchasable item, this can have discount coupons} associated with that “Repair Service”, note: user can add multiple Repair service and their prices will add up
+        2. Drop down section that will show all the list of "Repair Service" available and its price {purchasable item, this can have discount coupons} on the side {note the user can click and add multiple Repair services, and once added, it will be shown in a box that will show name, description, special instruction, price {purchasable item, this can have discount coupons} associated with that "Repair Service", note: user can add multiple Repair service and their prices will add up
         3. Contact Number (fetched from user profile)
         4. alternate number (user can enter)
         5. Email Address
@@ -104,10 +104,10 @@ Major Functionalities:
         7. upload images {some compression and then the images to be uploaded, the image number capped to 6 images max} {optional, but user can upload images if wants too}
         8. upload video {some compression and then the video to be uploaded, optional, but user can upload video too}
         9. Preferred date {popup to select future dates}
-        10. “time slots” {can select from a range of time slots, example: 6am to 8am, 8am to 10am, … 8pm to 10pm}
+        10. "time slots" {can select from a range of time slots, example: 6am to 8am, 8am to 10am, … 8pm to 10pm}
         11. and then below will have proceed for payment
         
-        the next page will show the whole details once again in a concise way, name, repair services selected, etc.. and then and this will also show the total sum of prices of all the “Repair Services” and that will be added with “Service Mechanic Charge”
+        the next page will show the whole details once again in a concise way, name, repair services selected, etc.. and then and this will also show the total sum of prices of all the "Repair Services" and that will be added with "Service Mechanic Charge"
         
         Now below that there will be an option to Apply Coupon {valid coupons will give discounts}, select the payment method, either pay online or pay offline and then user can click on submit repair request, that will send the request to admin,
         
@@ -115,23 +115,23 @@ Major Functionalities:
         
         here is what can happen: 
         
-        1. within 15min: Admin approves the Request, and if user chose Online payment, the request will show “waiting for payment” status, after which the user can pay and once payment done, the request will move to “Active” status, after which mechanic will visit as per time and he can do the job, and after done, the admin will mark that as completed, and then it will show completed, and will be moved to past requests
+        1. within 15min: Admin approves the Request, and if user chose Online payment, the request will show "waiting for payment" status, after which the user can pay and once payment done, the request will move to "Active" status, after which mechanic will visit as per time and he can do the job, and after done, the admin will mark that as completed, and then it will show completed, and will be moved to past requests
         2. after 15min: the request gets expired, and it will be show expired on both parties
 
 2. Rent Functionality:
 
 1. Admin POV:
     
-    Admin will have a section in sidebar called, “Rent Section”, this will have two sub sections:
+    Admin will have a section in sidebar called, "Rent Section", this will have two sub sections:
     
-    1. “Rental request management” section:
+    1. "Rental request management" section:
         
         Here admin will be able to manage and perform action over all the Rental request with all its associated data that he is getting from the user, by manage and perform action i mean:
         
         1. Approve the Rental request that comes from users - then request will be moved to  
-            1. “Waiting for Payment” status (if online payment is clicked user), after which the user’s rental request will also update to “Waiting for Payment” status too, and then once the amount is paid, the rental request will move “arranging  delivery” status, after which, the people will deliver the bicycle to the given address and, once delivered, the Request can be marked as “Active Rental” by the admin, all this mark by admin will be updated to user side too, and later once everything is done, the admin will contact the owner (from profile number) and get the bicycle back and mark the request completed
-            2. “arranging  delivery” status (if offline, cash payment is clicked by user),  after which, the people will deliver the bicycle to the given address and, once delivered, the Request can be marked as “Active Rental” by the admin, all this mark by admin will be updated to user side too, and later once everything is done, the admin will contact the owner (from profile number) and get the bicycle back and mark the request completed
-    2. “Manage Bicycle Inventory” section:
+            1. "Waiting for Payment" status (if online payment is clicked user), after which the user's rental request will also update to "Waiting for Payment" status too, and then once the amount is paid, the rental request will move "arranging  delivery" status, after which, the people will deliver the bicycle to the given address and, once delivered, the Request can be marked as "Active Rental" by the admin, all this mark by admin will be updated to user side too, and later once everything is done, the admin will contact the owner (from profile number) and get the bicycle back and mark the request completed
+            2. "arranging  delivery" status (if offline, cash payment is clicked by user),  after which, the people will deliver the bicycle to the given address and, once delivered, the Request can be marked as "Active Rental" by the admin, all this mark by admin will be updated to user side too, and later once everything is done, the admin will contact the owner (from profile number) and get the bicycle back and mark the request completed
+    2. "Manage Bicycle Inventory" section:
         
         Here admin will be able to add bicycles to the inventory, edit the current bicycles, remove the bicycles form the rental section, this includes
         
@@ -142,7 +142,7 @@ Major Functionalities:
         5. delivery charge for the bicycle {purchasable item, this can have discount coupons}
 2. Users POV:
     
-    User will have a section called “Book Rentals”, this will show as follow
+    User will have a section called "Book Rentals", this will show as follow
     
     {instead of making this into a form format, make this into a multiple step format, so user can track what they are doing, for great User experience}
     
@@ -158,7 +158,7 @@ Major Functionalities:
     
     here is what can happen: 
     
-    1. within 15min: Admin approves the Request, and if user chose Online payment, the request will show “waiting for payment” status, after which the user can pay and once payment done, the request will move to “arranging  delivery” status, after which, the people will deliver the bicycle to the given address and, once delivered, the Request can be marked as “Active Rental” by the admin, all this mark by admin will be updated to user side too, and later once everything is done, a the admin will mark that as completed, and then it will show completed, and will be moved to past request
+    1. within 15min: Admin approves the Request, and if user chose Online payment, the request will show "waiting for payment" status, after which the user can pay and once payment done, the request will move to "arranging  delivery" status, after which, the people will deliver the bicycle to the given address and, once delivered, the Request can be marked as "Active Rental" by the admin, all this mark by admin will be updated to user side too, and later once everything is done, a the admin will mark that as completed, and then it will show completed, and will be moved to past request
     2. after 15min: the request gets expired, and it will be show expired on both parties
 
 1. Dashboard Functionality (For Admin Only)
@@ -167,7 +167,7 @@ Major Functionalities:
     
 2. Coupon Management system
     
-    Admin will have a section called “Coupon manage” in the sidebar, that will allow the admin to create discount coupons, set expiry for all the items here that are marked with “{purchasable item, this can have discount coupons}”, each of these items can have multiple coupons, can change their discount rates
+    Admin will have a section called "Coupon manage" in the sidebar, that will allow the admin to create discount coupons, set expiry for all the items here that are marked with "{purchasable item, this can have discount coupons}", each of these items can have multiple coupons, can change their discount rates
     
 3. **Home Page Cards System:**
     1. Admin POV:
@@ -181,4 +181,4 @@ Major Functionalities:
 
     2. User POV:
         
-        User’s App will have a card slide thing at the top that will show all the promotional cards published by the admin
+        User's App will have a card slide thing at the top that will show all the promotional cards published by the admin
