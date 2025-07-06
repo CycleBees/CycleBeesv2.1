@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,17 @@ import {
   Image,
   Dimensions,
   Platform,
-  Modal
+  Modal,
+  Animated
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import AuthGuard from '@/components/AuthGuard';
+import PageTransition from '@/components/PageTransition';
+import StepIndicator from '@/components/StepIndicator';
 
 interface RepairService {
   id: number;
@@ -43,6 +47,12 @@ interface User {
 
 const { width } = Dimensions.get('window');
 
+const STEPS = [
+  { id: 'services', title: 'Services', icon: 'construct' },
+  { id: 'details', title: 'Details', icon: 'document-text' },
+  { id: 'summary', title: 'Summary', icon: 'checkmark-circle' },
+];
+
 export default function BookRepairScreen() {
   const router = useRouter();
   const [step, setStep] = useState<'services' | 'details' | 'summary'>('services');
@@ -51,6 +61,10 @@ export default function BookRepairScreen() {
   const [repairServices, setRepairServices] = useState<RepairService[]>([]);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [mechanicCharge, setMechanicCharge] = useState(0);
+  
+  // Animation refs
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
   
   // Form data
   const [selectedServices, setSelectedServices] = useState<RepairService[]>([]);
@@ -75,12 +89,117 @@ export default function BookRepairScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimeSlotPicker, setShowTimeSlotPicker] = useState(false);
 
+  const [errors, setErrors] = useState<{[key: string]: string}>({});
+
   useEffect(() => {
     fetchUserProfile();
     fetchRepairServices();
     fetchTimeSlots();
     fetchMechanicCharge();
+    
+    // Initial animation
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
   }, []);
+
+  const getCurrentStepIndex = () => {
+    return STEPS.findIndex(s => s.id === step);
+  };
+
+  const handleStepChange = (newStep: 'services' | 'details' | 'summary') => {
+    // Animate out
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: -50,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setStep(newStep);
+      // Animate in
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  };
+
+  const nextStep = () => {
+    // Clear previous errors
+    setErrors({});
+    
+    if (step === 'services') {
+      console.log('Services step - selectedServices.length:', selectedServices.length);
+      if (selectedServices.length === 0) {
+        console.log('No services selected - showing inline error');
+        setErrors({ services: 'Please select at least one repair service to continue.' });
+        return;
+      }
+      handleStepChange('details');
+    } else if (step === 'details') {
+      console.log('Details step validation:');
+      console.log('- time_slot_id:', formData.time_slot_id);
+      console.log('- address:', formData.address);
+      console.log('- email:', formData.email);
+      
+      const newErrors: {[key: string]: string} = {};
+      
+      // Validate required fields before proceeding to summary
+      if (!formData.time_slot_id) {
+        console.log('No time slot selected - showing inline error');
+        newErrors.timeSlot = 'Please select a preferred time slot for the repair service.';
+      }
+      if (!formData.address.trim()) {
+        console.log('No address entered - showing inline error');
+        newErrors.address = 'Please enter your service address to continue.';
+      }
+      if (!formData.email.trim()) {
+        console.log('No email entered - showing inline error');
+        newErrors.email = 'Please enter your email address to continue.';
+      }
+      
+      if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors);
+        return;
+      }
+      
+      handleStepChange('summary');
+    } else if (step === 'summary') {
+      // Call handleSubmit when on summary step
+      handleSubmit();
+    }
+  };
+
+  const prevStep = () => {
+    if (step === 'details') {
+      handleStepChange('services');
+    } else if (step === 'summary') {
+      handleStepChange('details');
+    }
+  };
 
   const fetchUserProfile = async () => {
     try {
@@ -411,18 +530,12 @@ export default function BookRepairScreen() {
         })}
       </View>
 
-      <View style={styles.stepFooter}>
-        <Text style={styles.totalText}>
-          Total: ₹{calculateTotal()} (Services: ₹{selectedServices.reduce((sum, s) => sum + s.price, 0)} + Mechanic: ₹{mechanicCharge})
-        </Text>
-        <TouchableOpacity
-          style={[styles.nextButton, selectedServices.length === 0 && styles.buttonDisabled]}
-          onPress={() => setStep('details')}
-          disabled={selectedServices.length === 0}
-        >
-          <Text style={styles.nextButtonText}>Next: Contact Details</Text>
-        </TouchableOpacity>
+      {errors.services && (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={16} color="#dc3545" />
+          <Text style={styles.errorText}>{errors.services}</Text>
       </View>
+      )}
     </View>
   );
 
@@ -449,26 +562,44 @@ export default function BookRepairScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Email Address</Text>
+          <Text style={styles.inputLabel}>Email Address *</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, errors.email && styles.inputError]}
             value={formData.email}
-            onChangeText={(text) => setFormData({...formData, email: text})}
+            onChangeText={(text) => {
+              setFormData({...formData, email: text});
+              if (errors.email) setErrors(prev => ({...prev, email: ''}));
+            }}
             placeholder="Enter email address"
             keyboardType="email-address"
           />
+          {errors.email && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle" size={14} color="#dc3545" />
+              <Text style={styles.errorText}>{errors.email}</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Address</Text>
+          <Text style={styles.inputLabel}>Address *</Text>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            style={[styles.input, styles.textArea, errors.address && styles.inputError]}
             value={formData.address}
-            onChangeText={(text) => setFormData({...formData, address: text})}
+            onChangeText={(text) => {
+              setFormData({...formData, address: text});
+              if (errors.address) setErrors(prev => ({...prev, address: ''}));
+            }}
             placeholder="Enter address"
             multiline
             numberOfLines={3}
           />
+          {errors.address && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle" size={14} color="#dc3545" />
+              <Text style={styles.errorText}>{errors.address}</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.inputGroup}>
@@ -536,9 +667,9 @@ export default function BookRepairScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Time Slot</Text>
+          <Text style={styles.inputLabel}>Time Slot *</Text>
           <TouchableOpacity 
-            style={styles.timeSlotPickerButton} 
+            style={[styles.timeSlotPickerButton, errors.timeSlot && styles.inputError]} 
             onPress={() => setShowTimeSlotPicker(true)}
           >
             <Text style={[
@@ -549,195 +680,287 @@ export default function BookRepairScreen() {
             </Text>
             <Ionicons name="chevron-down" size={20} color="#FFD11E" />
           </TouchableOpacity>
+          {errors.timeSlot && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle" size={14} color="#dc3545" />
+              <Text style={styles.errorText}>{errors.timeSlot}</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
-
-      <View style={styles.stepFooter}>
-        <TouchableOpacity
-          style={styles.stepBackButton}
-          onPress={() => setStep('services')}
-        >
-          <Text style={styles.backButtonText}>Back</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.nextButton, !formData.time_slot_id && styles.buttonDisabled]}
-          onPress={() => setStep('summary')}
-          disabled={!formData.time_slot_id}
-        >
-          <Text style={styles.nextButtonText}>Next: Summary</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 
   const renderSummaryStep = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Order Summary</Text>
-      <Text style={styles.stepSubtitle}>Review your repair request</Text>
-      
-      <ScrollView style={styles.summaryContainer}>
-        <View style={styles.summarySection}>
-          <Text style={styles.summarySectionTitle}>Selected Services</Text>
-          {selectedServices.map((service) => (
-            <View key={service.id} style={styles.summaryItem}>
-              <Text style={styles.summaryItemName}>{service.name}</Text>
-              <Text style={styles.summaryItemPrice}>₹{service.price}</Text>
+      <ScrollView style={styles.summaryContainer} showsVerticalScrollIndicator={false}>
+        {/* Services Card */}
+        <View style={styles.summaryCardEnhanced}>
+          <View style={styles.summaryCardHeaderEnhanced}>
+            <View style={styles.iconContainer}>
+              <Ionicons name="construct" size={20} color="#FFFFFF" />
+            </View>
+            <Text style={styles.summaryCardTitleEnhanced}>Selected Services</Text>
+            <Text style={styles.serviceCount}>{selectedServices.length} service{selectedServices.length !== 1 ? 's' : ''}</Text>
+          </View>
+          <View style={styles.servicesList}>
+            {selectedServices.map((service, index) => (
+              <View key={service.id} style={[styles.summaryItemRowEnhanced, index === selectedServices.length - 1 && styles.lastItem]}>
+                <View style={styles.serviceInfo}>
+                  <Text style={styles.summaryItemNameEnhanced}>{service.name}</Text>
+                  <Text style={styles.serviceDescription}>{service.description}</Text>
+                </View>
+                <Text style={styles.summaryItemPriceEnhanced}>₹{service.price}</Text>
             </View>
           ))}
+          </View>
         </View>
 
-        <View style={styles.summarySection}>
-          <Text style={styles.summarySectionTitle}>Contact Information</Text>
-          <Text style={styles.summaryText}>Phone: {user?.phone}</Text>
+        {/* Contact Card */}
+        <View style={styles.summaryCardEnhanced}>
+          <View style={styles.summaryCardHeaderEnhanced}>
+            <View style={[styles.iconContainer, { backgroundColor: '#FF6B6B' }]}>
+              <Ionicons name="person" size={20} color="#FFFFFF" />
+            </View>
+            <Text style={styles.summaryCardTitleEnhanced}>Contact Information</Text>
+          </View>
+          <View style={styles.contactInfo}>
+            <View style={styles.contactRow}>
+              <Ionicons name="call" size={16} color="#6c757d" style={styles.contactIcon} />
+              <Text style={styles.summaryTextEnhanced}>{user?.phone}</Text>
+            </View>
           {formData.alternate_number && (
-            <Text style={styles.summaryText}>Alternate: {formData.alternate_number}</Text>
+              <View style={styles.contactRow}>
+                <Ionicons name="call-outline" size={16} color="#6c757d" style={styles.contactIcon} />
+                <Text style={styles.summaryTextEnhanced}>{formData.alternate_number}</Text>
+              </View>
           )}
-          <Text style={styles.summaryText}>Email: {formData.email}</Text>
+            <View style={styles.contactRow}>
+              <Ionicons name="mail" size={16} color="#6c757d" style={styles.contactIcon} />
+              <Text style={styles.summaryTextEnhanced}>{formData.email}</Text>
+            </View>
+          </View>
         </View>
 
-        <View style={styles.summarySection}>
-          <Text style={styles.summarySectionTitle}>Address</Text>
-          <Text style={styles.summaryText}>{formData.address}</Text>
+        {/* Address Card */}
+        <View style={styles.summaryCardEnhanced}>
+          <View style={styles.summaryCardHeaderEnhanced}>
+            <View style={[styles.iconContainer, { backgroundColor: '#4ECDC4' }]}>
+              <Ionicons name="location" size={20} color="#FFFFFF" />
+            </View>
+            <Text style={styles.summaryCardTitleEnhanced}>Service Address</Text>
+          </View>
+          <View style={styles.addressInfo}>
+            <Ionicons name="location-outline" size={16} color="#6c757d" style={styles.contactIcon} />
+            <Text style={styles.summaryTextEnhanced}>{formData.address}</Text>
+          </View>
         </View>
 
-        <View style={styles.summarySection}>
-          <Text style={styles.summarySectionTitle}>Schedule</Text>
-          <Text style={styles.summaryText}>
-            Date: {formData.preferred_date.toLocaleDateString()}
-          </Text>
-          <Text style={styles.summaryText}>
-            Time: {timeSlots.find(s => s.id === formData.time_slot_id)?.start_time} - {timeSlots.find(s => s.id === formData.time_slot_id)?.end_time}
-          </Text>
+        {/* Schedule Card */}
+        <View style={styles.summaryCardEnhanced}>
+          <View style={styles.summaryCardHeaderEnhanced}>
+            <View style={[styles.iconContainer, { backgroundColor: '#45B7D1' }]}>
+              <Ionicons name="calendar" size={20} color="#FFFFFF" />
+            </View>
+            <Text style={styles.summaryCardTitleEnhanced}>Schedule</Text>
+          </View>
+          <View style={styles.scheduleInfo}>
+            <View style={styles.scheduleRow}>
+              <Ionicons name="calendar-outline" size={16} color="#6c757d" style={styles.contactIcon} />
+              <Text style={styles.summaryTextEnhanced}>{formData.preferred_date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
+            </View>
+            <View style={styles.scheduleRow}>
+              <Ionicons name="time" size={16} color="#6c757d" style={styles.contactIcon} />
+              <Text style={styles.summaryTextEnhanced}>{timeSlots.find(s => s.id === formData.time_slot_id)?.start_time} - {timeSlots.find(s => s.id === formData.time_slot_id)?.end_time}</Text>
+            </View>
+          </View>
         </View>
 
+        {/* Notes Card */}
         {formData.notes && (
-          <View style={styles.summarySection}>
-            <Text style={styles.summarySectionTitle}>Notes</Text>
-            <Text style={styles.summaryText}>{formData.notes}</Text>
+          <View style={styles.summaryCardEnhanced}>
+            <View style={styles.summaryCardHeaderEnhanced}>
+              <View style={[styles.iconContainer, { backgroundColor: '#96CEB4' }]}>
+                <Ionicons name="document-text" size={20} color="#FFFFFF" />
+              </View>
+              <Text style={styles.summaryCardTitleEnhanced}>Special Notes</Text>
+            </View>
+            <View style={styles.notesInfo}>
+              <Ionicons name="chatbubble-outline" size={16} color="#6c757d" style={styles.contactIcon} />
+              <Text style={styles.summaryTextEnhanced}>{formData.notes}</Text>
+            </View>
           </View>
         )}
 
-        <View style={styles.summarySection}>
-          <Text style={styles.summarySectionTitle}>Coupon</Text>
-          <View style={styles.couponInputContainer}>
+        {/* Coupon Card */}
+        <View style={styles.summaryCardEnhanced}>
+          <View style={styles.summaryCardHeaderEnhanced}>
+            <View style={[styles.iconContainer, { backgroundColor: '#FFA726' }]}>
+              <Ionicons name="pricetag" size={20} color="#FFFFFF" />
+            </View>
+            <Text style={styles.summaryCardTitleEnhanced}>Apply Coupon</Text>
+          </View>
+          <View style={styles.couponInputContainerEnhanced}>
             <TextInput
-              style={[styles.input, { flex: 1 }]}
+              style={styles.couponInput}
               value={coupon}
               onChangeText={setCoupon}
               placeholder="Enter coupon code"
               autoCapitalize="characters"
+              placeholderTextColor="#9ca3af"
             />
-            <TouchableOpacity style={styles.applyCouponButton} onPress={applyCoupon}>
-              <Text style={styles.applyCouponText}>Apply</Text>
+            <TouchableOpacity style={styles.applyCouponButtonEnhanced} onPress={applyCoupon}>
+              <Text style={styles.applyCouponTextEnhanced}>Apply</Text>
             </TouchableOpacity>
           </View>
-          {/* Test buttons for development */}
-          <View style={styles.testButtonsContainer}>
-            <TouchableOpacity 
-              style={styles.testButton} 
-              onPress={() => {
-                setCoupon('FIRST50');
-                setTimeout(() => applyCoupon(), 100); // Small delay to ensure state is updated
-              }}
-            >
-              <Text style={styles.testButtonText}>Test FIRST50</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.testButton} 
-              onPress={() => {
-                setCoupon('WELCOME10');
-                setTimeout(() => applyCoupon(), 100); // Small delay to ensure state is updated
-              }}
-            >
-              <Text style={styles.testButtonText}>Test WELCOME10</Text>
-            </TouchableOpacity>
-          </View>
-          {couponError ? <Text style={styles.couponError}>{couponError}</Text> : null}
+          {couponError ? <Text style={styles.couponErrorEnhanced}>{couponError}</Text> : null}
           {appliedCoupon && (
-            <Text style={styles.couponSuccess}>
+            <View style={styles.couponSuccessContainer}>
+              <Ionicons name="checkmark-circle" size={16} color="#28a745" />
+              <Text style={styles.couponSuccessEnhanced}>
               Coupon "{appliedCoupon.code}" applied! Discount: ₹{discount}
             </Text>
+            </View>
           )}
         </View>
 
-        <View style={styles.summarySection}>
-          <Text style={styles.summarySectionTitle}>Payment Method</Text>
-          <View style={styles.paymentOptionsContainer}>
+        {/* Payment Card */}
+        <View style={styles.summaryCardEnhanced}>
+          <View style={styles.summaryCardHeaderEnhanced}>
+            <View style={[styles.iconContainer, { backgroundColor: '#9C27B0' }]}>
+              <Ionicons name="wallet" size={20} color="#FFFFFF" />
+            </View>
+            <Text style={styles.summaryCardTitleEnhanced}>Payment Method</Text>
+          </View>
+          <View style={styles.paymentOptionsContainerEnhanced}>
             <TouchableOpacity
-              style={[styles.paymentOption, styles.paymentOptionDisabled]}
+              style={[styles.paymentOptionEnhanced, styles.paymentOptionDisabled]}
               disabled={true}
             >
               <Ionicons name="radio-button-off" size={20} color="#ccc" />
               <Text style={styles.paymentOptionTextDisabled}>Online (Coming Soon)</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.paymentOption, paymentMethod === 'offline' && styles.paymentOptionSelected]}
+              style={[styles.paymentOptionEnhanced, paymentMethod === 'offline' && styles.paymentOptionSelectedEnhanced]}
               onPress={() => setPaymentMethod('offline')}
             >
               <Ionicons name={paymentMethod === 'offline' ? 'radio-button-on' : 'radio-button-off'} size={20} color="#FFD11E" />
-              <Text style={styles.paymentOptionText}>Offline (Cash)</Text>
+              <Text style={styles.paymentOptionTextEnhanced}>Offline (Cash)</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.paymentNotice}>
+          <Text style={styles.paymentNoticeEnhanced}>
             Online payment will be available soon. For now, please use offline payment.
           </Text>
         </View>
 
-        <View style={styles.summarySection}>
-          <Text style={styles.summarySectionTitle}>Total Amount</Text>
-          <View style={styles.totalBreakdown}>
-            <Text style={styles.totalItem}>Services: ₹{selectedServices.reduce((sum, s) => sum + s.price, 0)}</Text>
-            <Text style={styles.totalItem}>Mechanic Charge: ₹{mechanicCharge}</Text>
-            {discount > 0 && <Text style={styles.totalItem}>Discount: -₹{discount}</Text>}
-            <Text style={styles.totalAmount}>Total: ₹{calculateTotalWithDiscount()}</Text>
+        {/* Total Card - visually distinct */}
+        <View style={styles.summaryTotalCardEnhanced}>
+          <View style={styles.summaryCardHeaderEnhanced}>
+            <View style={[styles.iconContainer, { backgroundColor: '#28a745' }]}>
+              <Ionicons name="cash" size={20} color="#FFFFFF" />
+          </View>
+            <Text style={styles.summaryTotalTitleEnhanced}>Total Amount</Text>
+        </View>
+          <View style={styles.totalBreakdownEnhanced}>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalItemEnhanced}>Services</Text>
+              <Text style={styles.totalValueEnhanced}>₹{selectedServices.reduce((sum, s) => sum + s.price, 0)}</Text>
+            </View>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalItemEnhanced}>Mechanic Charge</Text>
+              <Text style={styles.totalValueEnhanced}>₹{mechanicCharge}</Text>
+            </View>
+            {discount > 0 && (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalItemEnhanced}>Discount</Text>
+                <Text style={[styles.totalValueEnhanced, { color: '#28a745' }]}>-₹{discount}</Text>
+              </View>
+          )}
+            <View style={styles.finalTotalRow}>
+              <Text style={styles.finalTotalText}>Total</Text>
+              <Text style={styles.finalTotalAmount}>₹{calculateTotalWithDiscount()}</Text>
+      </View>
           </View>
         </View>
       </ScrollView>
-
-      <View style={styles.stepFooter}>
-        <TouchableOpacity
-          style={styles.stepBackButton}
-          onPress={() => setStep('details')}
-        >
-          <Text style={styles.backButtonText}>Back</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.submitButton, loading && styles.buttonDisabled]}
-          onPress={handleSubmit}
-          disabled={loading}
-        >
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#2D3E50" />
-              <Text style={styles.loadingText}>Submitting...</Text>
-            </View>
-          ) : (
-            <Text style={styles.submitButtonText}>Submit Request</Text>
-          )}
-        </TouchableOpacity>
-      </View>
     </View>
   );
 
   return (
+    <AuthGuard message="Loading repair services...">
     <SafeAreaView style={styles.container}>
+        {/* Modern Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#2D3E50" />
         </TouchableOpacity>
+          <View style={styles.headerContent}>
         <Text style={styles.headerTitle}>Book Repair</Text>
-        <View style={styles.placeholder} />
+            <Text style={styles.headerSubtitle}>Professional repair services</Text>
+      </View>
+          <View style={styles.headerSpacer} />
       </View>
 
-      <View style={styles.progressBar}>
-        <View style={[styles.progressStep, step === 'services' && styles.progressActive]} />
-        <View style={[styles.progressStep, step === 'details' && styles.progressActive]} />
-        <View style={[styles.progressStep, step === 'summary' && styles.progressActive]} />
-      </View>
+        {/* Step Indicator */}
+        <StepIndicator
+          steps={STEPS}
+          currentStep={getCurrentStepIndex()}
+          showStepNumbers={false}
+        />
 
+        {/* Animated Content - make scrollable and leave space for total+nav bar */}
+        <Animated.View
+          style={[
+            styles.contentContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <ScrollView
+            contentContainerStyle={{ paddingBottom: 40 }}
+            showsVerticalScrollIndicator={false}
+          >
       {step === 'services' && renderServicesStep()}
       {step === 'details' && renderDetailsStep()}
       {step === 'summary' && renderSummaryStep()}
+          </ScrollView>
+        </Animated.View>
+
+        {/* Total Amount Bar (fixed above nav) */}
+        <View style={styles.totalBarEnhanced}>
+          <Text style={styles.totalBarText}>
+            Total: ₹{calculateTotalWithDiscount()}
+          </Text>
+        </View>
+
+        {/* Navigation Buttons (fixed at bottom) */}
+        <View style={styles.navigationContainer}>
+          {step !== 'services' && (
+            <TouchableOpacity onPress={prevStep} style={styles.navButton}>
+              <Ionicons name="arrow-back" size={20} color="#2D3E50" />
+              <Text style={styles.navButtonText}>Back</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={nextStep}
+            style={[
+              styles.navButton,
+              styles.nextButton,
+              step === 'summary' && styles.submitButton,
+            ]}
+          >
+            <Text style={styles.nextButtonText}>
+              {step === 'summary' ? 'Submit' : 'Next'}
+            </Text>
+            <Ionicons
+              name={step === 'summary' ? 'checkmark' : 'arrow-forward'}
+              size={20}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+        </View>
 
       {/* Date Picker Modal */}
       <Modal
@@ -812,6 +1035,7 @@ export default function BookRepairScreen() {
         </View>
       </Modal>
     </SafeAreaView>
+    </AuthGuard>
   );
 }
 
@@ -825,19 +1049,86 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    backgroundColor: '#FFD11E',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  headerContent: {
+    flex: 1,
+    alignItems: 'center',
+    marginLeft: 8,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#2D3E50',
+    marginBottom: 2,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#2D3E50',
+    opacity: 0.8,
   },
   backButton: {
     padding: 8,
+    borderRadius: 16,
+    backgroundColor: '#FFF5CC',
   },
-  placeholder: {
+  headerSpacer: {
     width: 40,
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  navigationContainer: {
+    flexDirection: 'row',
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+    gap: 12,
+  },
+  navButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
+    flex: 1,
+  },
+  navButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2D3E50',
+    marginLeft: 8,
+  },
+  nextButton: {
+    backgroundColor: '#FFD11E',
+    borderColor: '#FFD11E',
+  },
+  submitButton: {
+    backgroundColor: '#28a745',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  nextButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginRight: 8,
   },
   progressBar: {
     flexDirection: 'row',
@@ -858,6 +1149,7 @@ const styles = StyleSheet.create({
   stepContainer: {
     flex: 1,
     padding: 16,
+    paddingBottom: 4,
   },
   stepTitle: {
     fontSize: 24,
@@ -876,6 +1168,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     gap: 12,
+    paddingBottom: 4,
   },
   serviceCardCompact: {
     width: (width - 48) / 2,
@@ -932,19 +1225,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
-  nextButton: {
-    backgroundColor: '#FFD11E',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  nextButtonText: {
-    color: '#2D3E50',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+
   formContainer: {
     flex: 1,
+    paddingBottom: 4,
   },
   inputGroup: {
     marginBottom: 20,
@@ -1117,19 +1401,23 @@ const styles = StyleSheet.create({
   summaryContainer: {
     flex: 1,
   },
-  summarySection: {
+  summaryCard: {
     backgroundColor: '#f8f9fa',
     padding: 16,
     borderRadius: 12,
     marginBottom: 16,
   },
-  summarySectionTitle: {
+  summaryCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  summaryCardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#2D3E50',
-    marginBottom: 12,
   },
-  summaryItem: {
+  summaryItemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -1216,12 +1504,7 @@ const styles = StyleSheet.create({
     color: '#2D3E50',
     fontWeight: '600',
   },
-  submitButton: {
-    backgroundColor: '#28a745',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
+
   submitButtonText: {
     color: '#fff',
     fontSize: 16,
@@ -1284,5 +1567,328 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginTop: 8,
     textAlign: 'center',
+  },
+  totalBar: {
+    backgroundColor: '#FFF5CC',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderTopWidth: 2,
+    borderTopColor: '#FFD11E',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  totalBarContent: {
+    alignItems: 'center',
+  },
+  totalBreakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 2,
+  },
+  totalLabel: {
+    fontSize: 14,
+    color: '#6c757d',
+    fontWeight: '500',
+  },
+  totalValue: {
+    fontSize: 14,
+    color: '#2D3E50',
+    fontWeight: '600',
+  },
+  discountValue: {
+    color: '#28a745',
+  },
+  finalTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#FFD11E',
+    marginTop: 4,
+  },
+  finalTotalLabel: {
+    fontSize: 16,
+    color: '#2D3E50',
+    fontWeight: 'bold',
+  },
+  finalTotalValue: {
+    fontSize: 18,
+    color: '#2D3E50',
+    fontWeight: 'bold',
+  },
+  summaryTotalCard: {
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  summaryTotalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginBottom: 12,
+  },
+  summaryCardEnhanced: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  summaryCardHeaderEnhanced: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFD11E',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  summaryCardTitleEnhanced: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    flex: 1,
+  },
+  serviceCount: {
+    fontSize: 13,
+    color: '#6c757d',
+    fontStyle: 'italic',
+  },
+  servicesList: {
+    gap: 8,
+  },
+  summaryItemRowEnhanced: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#dee2e6',
+  },
+  serviceInfo: {
+    flex: 1,
+  },
+  summaryItemNameEnhanced: {
+    fontSize: 15,
+    color: '#2D3E50',
+    fontWeight: '500',
+  },
+  serviceDescription: {
+    fontSize: 13,
+    color: '#6c757d',
+    fontStyle: 'italic',
+  },
+  summaryItemPriceEnhanced: {
+    fontSize: 15,
+    color: '#2D3E50',
+    fontWeight: '600',
+  },
+  contactInfo: {
+    gap: 12,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  contactIcon: {
+    marginRight: 6,
+  },
+  summaryTextEnhanced: {
+    fontSize: 15,
+    color: '#4A4A4A',
+    lineHeight: 20,
+  },
+  addressInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  scheduleInfo: {
+    gap: 8,
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  notesInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  couponInputContainerEnhanced: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 6,
+  },
+  couponInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 15,
+    color: '#2D3E50',
+  },
+  applyCouponButtonEnhanced: {
+    backgroundColor: '#FFD11E',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applyCouponTextEnhanced: {
+    color: '#2D3E50',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  couponErrorEnhanced: {
+    color: '#dc3545',
+    fontSize: 13,
+    marginTop: 3,
+  },
+  couponSuccessContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  couponSuccessEnhanced: {
+    color: '#28a745',
+    fontSize: 13,
+  },
+  paymentOptionsContainerEnhanced: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  paymentOptionEnhanced: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    borderRadius: 8,
+    flex: 1,
+  },
+  paymentOptionSelectedEnhanced: {
+    backgroundColor: '#FFF5CC',
+    borderColor: '#FFD11E',
+  },
+  paymentOptionTextEnhanced: {
+    fontSize: 16,
+    color: '#2D3E50',
+    fontWeight: '600',
+  },
+  paymentNoticeEnhanced: {
+    fontSize: 14,
+    color: '#6c757d',
+    fontStyle: 'italic',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  summaryTotalCardEnhanced: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  summaryTotalTitleEnhanced: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    flex: 1,
+  },
+  totalBreakdownEnhanced: {
+    borderTopWidth: 1,
+    borderTopColor: '#dee2e6',
+    paddingTop: 12,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 3,
+  },
+  totalItemEnhanced: {
+    fontSize: 15,
+    color: '#4A4A4A',
+    fontWeight: '500',
+  },
+  totalValueEnhanced: {
+    fontSize: 15,
+    color: '#2D3E50',
+    fontWeight: '600',
+  },
+  lastItem: {
+    borderBottomWidth: 0,
+  },
+  finalTotalText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+  },
+  finalTotalAmount: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#28a745',
+  },
+  totalBarEnhanced: {
+    backgroundColor: '#FFF5CC',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderTopWidth: 2,
+    borderTopColor: '#FFD11E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  totalBarText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingHorizontal: 4,
+  },
+  errorText: {
+    color: '#dc3545',
+    fontSize: 14,
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  inputError: {
+    borderColor: '#dc3545',
+    borderWidth: 2,
   },
 }); 

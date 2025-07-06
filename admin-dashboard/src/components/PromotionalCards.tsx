@@ -8,9 +8,9 @@ interface PromotionalCard {
   imageUrl: string;
   externalLink: string;
   displayOrder: number;
-  startsAt: string;
-  endsAt: string;
   isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export default function PromotionalCards() {
@@ -25,11 +25,10 @@ export default function PromotionalCards() {
     description: '',
     externalLink: '',
     displayOrder: 1,
-    startsAt: '',
-    endsAt: '',
     isActive: true,
     image: null as File | null
   });
+  const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
 
   useEffect(() => {
     fetchCards();
@@ -51,7 +50,8 @@ export default function PromotionalCards() {
         const data = await response.json();
         setCards(Array.isArray(data.data?.cards) ? data.data.cards : []);
       } else {
-        throw new Error('Failed to fetch promotional cards');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch promotional cards');
       }
     } catch (error) {
       console.error('Error fetching promotional cards:', error);
@@ -62,11 +62,61 @@ export default function PromotionalCards() {
     }
   };
 
+  const validateForm = () => {
+    const errors: {[key: string]: string} = {};
+
+    if (!formData.title.trim()) {
+      errors.title = 'Title is required';
+    } else if (formData.title.trim().length > 100) {
+      errors.title = 'Title must be less than 100 characters';
+    }
+
+    if (formData.description && formData.description.trim().length > 500) {
+      errors.description = 'Description must be less than 500 characters';
+    }
+
+    if (formData.externalLink && formData.externalLink.trim()) {
+      const link = formData.externalLink.trim();
+      
+      // Check if it's an internal route (starts with /)
+      if (link.startsWith('/')) {
+        // Validate internal route format
+        if (!/^\/[a-zA-Z0-9\-_\/]+$/.test(link)) {
+          errors.externalLink = 'Invalid internal route format. Use format like /profile, /book-repair';
+        }
+      } else {
+        // Check if it's a valid external URL
+        if (!isValidUrl(link)) {
+          errors.externalLink = 'Please enter a valid URL (https://example.com) or internal route (like /profile)';
+        }
+      }
+    }
+
+    if (formData.displayOrder < 0) {
+      errors.displayOrder = 'Display order must be 0 or greater';
+    }
+
+    if (formData.image && formData.image.size > 5 * 1024 * 1024) {
+      errors.image = 'Image size must be less than 5MB';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const isValidUrl = (string: string) => {
+    try {
+      new URL(string);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.title || !formData.description) {
-      setError('Please fill in all required fields');
+    if (!validateForm()) {
       return;
     }
 
@@ -76,12 +126,10 @@ export default function PromotionalCards() {
       const token = localStorage.getItem('adminToken');
       const formDataToSend = new FormData();
       
-      formDataToSend.append('title', formData.title);
-      formDataToSend.append('description', formData.description);
-      formDataToSend.append('externalLink', formData.externalLink);
+      formDataToSend.append('title', formData.title.trim());
+      formDataToSend.append('description', formData.description.trim());
+      formDataToSend.append('externalLink', formData.externalLink.trim());
       formDataToSend.append('displayOrder', formData.displayOrder.toString());
-      formDataToSend.append('startsAt', formData.startsAt);
-      formDataToSend.append('endsAt', formData.endsAt);
       formDataToSend.append('isActive', formData.isActive.toString());
       
       if (formData.image) {
@@ -102,6 +150,8 @@ export default function PromotionalCards() {
         body: formDataToSend
       });
 
+      const responseData = await response.json();
+
       if (response.ok) {
         setSuccess(editingCard ? 'Card updated successfully!' : 'Card created successfully!');
         setShowForm(false);
@@ -109,8 +159,7 @@ export default function PromotionalCards() {
         resetForm();
         fetchCards();
       } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to save card');
+        throw new Error(responseData.message || 'Failed to save card');
       }
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Network error. Please try again.');
@@ -126,11 +175,10 @@ export default function PromotionalCards() {
       description: card.description,
       externalLink: card.externalLink,
       displayOrder: card.displayOrder,
-      startsAt: card.startsAt,
-      endsAt: card.endsAt,
       isActive: card.isActive,
       image: null
     });
+    setFormErrors({});
     setShowForm(true);
   };
 
@@ -151,12 +199,13 @@ export default function PromotionalCards() {
         }
       });
 
+      const responseData = await response.json();
+
       if (response.ok) {
         setSuccess('Card deleted successfully!');
         fetchCards();
       } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to delete card');
+        throw new Error(responseData.message || 'Failed to delete card');
       }
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Network error. Please try again.');
@@ -171,29 +220,40 @@ export default function PromotionalCards() {
       description: '',
       externalLink: '',
       displayOrder: 1,
-      startsAt: '',
-      endsAt: '',
       isActive: true,
       image: null
     });
+    setFormErrors({});
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFormData({ ...formData, image: e.target.files[0] });
+      const file = e.target.files[0];
+      
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+      if (!allowedTypes.includes(file.type)) {
+        setFormErrors({...formErrors, image: 'Please select a valid image file (JPEG, PNG, GIF)'});
+        return;
+      }
+      
+      // Validate file size (5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setFormErrors({...formErrors, image: 'Image size must be less than 5MB'});
+        return;
+      }
+      
+      setFormData({ ...formData, image: file });
+      setFormErrors({...formErrors, image: ''});
     }
   };
 
-  const isExpired = (endDate: string) => {
-    return new Date(endDate) < new Date();
+  const getActiveCardsCount = () => {
+    return cards.filter(card => card.isActive).length;
   };
 
-  const isActive = (startDate: string, endDate: string, isActive: boolean) => {
-    if (!isActive) return false;
-    const now = new Date();
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    return now >= start && now <= end;
+  const getInactiveCardsCount = () => {
+    return cards.filter(card => !card.isActive).length;
   };
 
   if (loading && cards.length === 0) return <div className="loading">Loading promotional cards...</div>;
@@ -233,16 +293,12 @@ export default function PromotionalCards() {
             <div className="stat-label">Total Cards</div>
           </div>
           <div className="stat-card">
-            <div className="stat-number">
-              {cards.filter(c => isActive(c.startsAt, c.endsAt, c.isActive)).length}
-            </div>
+            <div className="stat-number">{getActiveCardsCount()}</div>
             <div className="stat-label">Active Cards</div>
           </div>
           <div className="stat-card">
-            <div className="stat-number">
-              {cards.filter(c => isExpired(c.endsAt)).length}
-            </div>
-            <div className="stat-label">Expired Cards</div>
+            <div className="stat-number">{getInactiveCardsCount()}</div>
+            <div className="stat-label">Inactive Cards</div>
           </div>
         </div>
       </div>
@@ -280,13 +336,19 @@ export default function PromotionalCards() {
                     <img 
                       src={`http://localhost:3000/${card.imageUrl}`} 
                       alt={card.title}
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        target.nextElementSibling?.classList.remove('hidden');
+                      }}
                     />
-                  ) : (
-                    <div className="no-image">No Image</div>
-                  )}
+                  ) : null}
+                  <div className={`no-image ${card.imageUrl ? 'hidden' : ''}`}>
+                    No Image
+                  </div>
                   <div className="card-status">
-                    <span className={`status-badge ${isActive(card.startsAt, card.endsAt, card.isActive) ? 'active' : 'inactive'}`}>
-                      {isActive(card.startsAt, card.endsAt, card.isActive) ? 'Active' : 'Inactive'}
+                    <span className={`status-badge ${card.isActive ? 'active' : 'inactive'}`}>
+                      {card.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </div>
                 </div>
@@ -304,23 +366,29 @@ export default function PromotionalCards() {
                     {card.externalLink && (
                       <div className="detail-item">
                         <span className="detail-label">Link:</span>
-                        <a href={card.externalLink} target="_blank" rel="noopener noreferrer" className="detail-link">
-                          View Link
-                        </a>
+                        {card.externalLink.startsWith('/') ? (
+                          <span className="detail-value">
+                            Internal: {card.externalLink}
+                          </span>
+                        ) : (
+                          <a href={card.externalLink} target="_blank" rel="noopener noreferrer" className="detail-link">
+                            External Link
+                          </a>
+                        )}
                       </div>
                     )}
                     
                     <div className="detail-item">
-                      <span className="detail-label">Start:</span>
+                      <span className="detail-label">Created:</span>
                       <span className="detail-value">
-                        {new Date(card.startsAt).toLocaleDateString()}
+                        {new Date(card.createdAt).toLocaleDateString()}
                       </span>
                     </div>
                     
                     <div className="detail-item">
-                      <span className="detail-label">End:</span>
+                      <span className="detail-label">Updated:</span>
                       <span className="detail-value">
-                        {new Date(card.endsAt).toLocaleDateString()}
+                        {new Date(card.updatedAt).toLocaleDateString()}
                       </span>
                     </div>
                   </div>
@@ -376,31 +444,53 @@ export default function PromotionalCards() {
                 <input
                   type="text"
                   value={formData.title}
-                  onChange={(e) => setFormData({...formData, title: e.target.value})}
+                  onChange={(e) => {
+                    setFormData({...formData, title: e.target.value});
+                    if (formErrors.title) setFormErrors({...formErrors, title: ''});
+                  }}
                   placeholder="Enter card title"
+                  maxLength={100}
                   required
+                  className={formErrors.title ? 'error' : ''}
                 />
+                {formErrors.title && <span className="field-error">{formErrors.title}</span>}
               </div>
 
               <div className="form-group">
-                <label>Description *</label>
+                <label>Description</label>
                 <textarea
                   value={formData.description}
-                  onChange={(e) => setFormData({...formData, description: e.target.value})}
+                  onChange={(e) => {
+                    setFormData({...formData, description: e.target.value});
+                    if (formErrors.description) setFormErrors({...formErrors, description: ''});
+                  }}
                   placeholder="Enter card description"
                   rows={3}
-                  required
+                  maxLength={500}
+                  className={formErrors.description ? 'error' : ''}
                 />
+                {formErrors.description && <span className="field-error">{formErrors.description}</span>}
               </div>
 
               <div className="form-group">
-                <label>External Link (Optional)</label>
+                <label>Link (Optional)</label>
                 <input
-                  type="url"
+                  type="text"
                   value={formData.externalLink}
-                  onChange={(e) => setFormData({...formData, externalLink: e.target.value})}
-                  placeholder="https://example.com"
+                  onChange={(e) => {
+                    setFormData({...formData, externalLink: e.target.value});
+                    if (formErrors.externalLink) setFormErrors({...formErrors, externalLink: ''});
+                  }}
+                  placeholder="https://example.com or /profile or leave empty"
+                  className={formErrors.externalLink ? 'error' : ''}
                 />
+                {formErrors.externalLink && <span className="field-error">{formErrors.externalLink}</span>}
+                <small>
+                  <strong>Link Options:</strong><br/>
+                  • <strong>External URL:</strong> https://example.com<br/>
+                  • <strong>Internal Route:</strong> /profile, /book-repair, /my-requests<br/>
+                  • <strong>No Link:</strong> Leave empty for cards without navigation
+                </small>
               </div>
 
               <div className="form-row">
@@ -409,9 +499,14 @@ export default function PromotionalCards() {
                   <input
                     type="number"
                     value={formData.displayOrder}
-                    onChange={(e) => setFormData({...formData, displayOrder: parseInt(e.target.value)})}
-                    min="1"
+                    onChange={(e) => {
+                      setFormData({...formData, displayOrder: parseInt(e.target.value) || 0});
+                      if (formErrors.displayOrder) setFormErrors({...formErrors, displayOrder: ''});
+                    }}
+                    min="0"
+                    className={formErrors.displayOrder ? 'error' : ''}
                   />
+                  {formErrors.displayOrder && <span className="field-error">{formErrors.displayOrder}</span>}
                 </div>
 
                 <div className="form-group">
@@ -420,27 +515,10 @@ export default function PromotionalCards() {
                     type="file"
                     accept="image/*"
                     onChange={handleImageChange}
+                    className={formErrors.image ? 'error' : ''}
                   />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Start Date</label>
-                  <input
-                    type="date"
-                    value={formData.startsAt}
-                    onChange={(e) => setFormData({...formData, startsAt: e.target.value})}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>End Date</label>
-                  <input
-                    type="date"
-                    value={formData.endsAt}
-                    onChange={(e) => setFormData({...formData, endsAt: e.target.value})}
-                  />
+                  {formErrors.image && <span className="field-error">{formErrors.image}</span>}
+                  <small>Max size: 5MB. Supported formats: JPEG, PNG, GIF</small>
                 </div>
               </div>
 

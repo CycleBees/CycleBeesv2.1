@@ -9,12 +9,16 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  ActivityIndicator
+  ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import ModernLoginScreen from '@/components/ModernLoginScreen';
+import SplashAnimation from '@/components/SplashAnimation';
+import { Colors } from '@/constants/Colors';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -23,6 +27,7 @@ export default function LoginScreen() {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [registrationData, setRegistrationData] = useState({
     full_name: '',
     email: '',
@@ -42,34 +47,58 @@ export default function LoginScreen() {
   const [otpError, setOtpError] = useState('');
   const [otpCooldown, setOtpCooldown] = useState(0);
 
-  // Clear any existing user state when login page loads
+  // Check authentication status on component mount
   useEffect(() => {
-    const clearUserState = async () => {
-      try {
-        // Clear all storage to ensure clean logout
-        await AsyncStorage.clear();
-        console.log('Cleared all storage on login page load');
-        
-        // Reset all state
-        setStep('phone');
-        setPhone('');
-        setOtp('');
-        setIsNewUser(false);
-        setRegistrationData({
-          full_name: '',
-          email: '',
-          age: '',
-          pincode: '',
-          address: ''
-        });
-        console.log('Reset all login state');
-      } catch (error) {
-        console.error('Error clearing user state:', error);
-      }
-    };
-    
-    clearUserState();
+    checkAuthStatus();
   }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      setIsCheckingAuth(true);
+      const token = await AsyncStorage.getItem('userToken');
+      
+      if (token) {
+        // User is already authenticated, redirect to home
+        console.log('User already authenticated, redirecting to home');
+        router.replace('/home');
+        return;
+      }
+    } catch (error) {
+      console.error('Error checking auth status:', error);
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  };
+
+  // Clear any existing user state when login page loads (only if not authenticated)
+  useEffect(() => {
+    if (!isCheckingAuth) {
+      const clearUserState = async () => {
+        try {
+          // Clear all storage to ensure clean logout
+          await AsyncStorage.clear();
+          console.log('Cleared all storage on login page load');
+          
+          // Reset all state
+          setPhone('');
+          setOtp('');
+          setIsNewUser(false);
+          setRegistrationData({
+            full_name: '',
+            email: '',
+            age: '',
+            pincode: '',
+            address: ''
+          });
+          console.log('Reset all login state');
+        } catch (error) {
+          console.error('Error clearing user state:', error);
+        }
+      };
+      
+      clearUserState();
+    }
+  }, [isCheckingAuth]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
@@ -79,23 +108,8 @@ export default function LoginScreen() {
     return () => clearTimeout(timer);
   }, [otpCooldown]);
 
-  const validatePhone = (value: string) => {
-    const phoneRegex = /^[6-9]\d{9}$/;
-    return phoneRegex.test(value);
-  };
-
-  const validateEmail = (value: string) => {
-    return /.+@.+\..+/.test(value);
-  };
-
-  const handleSendOTP = async () => {
-    if (!validatePhone(phone)) {
-      setErrors((prev) => ({ ...prev, phone: 'Please enter a valid 10-digit Indian mobile number' }));
-      Alert.alert('Error', 'Please enter a valid 10-digit Indian mobile number');
-      return;
-    }
-    setErrors((prev) => ({ ...prev, phone: '' }));
-    setOtpError('');
+  const handleSendOTP = async (phoneNumber: string) => {
+    setPhone(phoneNumber);
     setLoading(true);
     try {
       const response = await fetch('http://localhost:3000/api/auth/send-otp', {
@@ -103,7 +117,7 @@ export default function LoginScreen() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ phone })
+        body: JSON.stringify({ phone: phoneNumber })
       });
       const data = await response.json();
       if (response.ok) {
@@ -111,17 +125,17 @@ export default function LoginScreen() {
         setOtpCooldown(30);
         Alert.alert('Success', 'OTP sent to your phone number');
       } else {
-        setErrors((prev) => ({ ...prev, phone: data.message || 'Failed to send OTP' }));
-        setOtpError(data.message || 'Failed to send OTP');
         Alert.alert('Error', data.message || 'Failed to send OTP');
       }
     } catch (error) {
-      setErrors((prev) => ({ ...prev, phone: 'Network error. Please try again.' }));
-      setOtpError('Network error. Please try again.');
       Alert.alert('Error', 'Network error. Please try again.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const validateEmail = (value: string) => {
+    return /.+@.+\..+/.test(value);
   };
 
   const handleVerifyOTP = async () => {
@@ -146,7 +160,7 @@ export default function LoginScreen() {
           setStep('register');
         } else {
           await AsyncStorage.setItem('userToken', data.data.token);
-          router.push('/');
+          router.replace('/home');
         }
       } else {
         setOtpError(data.message || 'Invalid OTP');
@@ -205,7 +219,6 @@ export default function LoginScreen() {
         pincode,
         address
       };
-      console.log('Sending registration data:', requestBody);
       const response = await fetch('http://localhost:3000/api/auth/register', {
         method: 'POST',
         headers: {
@@ -214,381 +227,486 @@ export default function LoginScreen() {
         body: JSON.stringify(requestBody)
       });
       const data = await response.json();
-      console.log('Registration response:', { status: response.status, data });
       if (response.ok) {
         await AsyncStorage.setItem('userToken', data.data.token);
-        // Registration successful - navigate directly to dashboard
-        router.push('/');
+        router.replace('/home');
       } else {
-        // Show specific error for email/phone
-        if (data.message && data.message.includes('email')) {
-          setErrors((prev) => ({ ...prev, email: data.message }));
-        } else if (data.message && data.message.includes('phone')) {
-          setErrors((prev) => ({ ...prev, phone: data.message }));
+        if (data.errors) {
+          const errorMessages = data.errors.map((err: any) => err.msg).join(', ');
+          setErrors((prev) => ({ ...prev, general: errorMessages }));
         } else {
-          setErrors((prev) => ({ ...prev, general: data.message || 'Registration failed. Please try again.' }));
+          setErrors((prev) => ({ ...prev, general: data.message || 'Registration failed' }));
         }
-        Alert.alert('Registration Failed', data.message || 'Registration failed. Please try again.');
       }
     } catch (error) {
       setErrors((prev) => ({ ...prev, general: 'Network error. Please try again.' }));
-      Alert.alert('Error', 'Network error. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const renderPhoneStep = () => (
-    <View style={styles.stepContainer}>
-      <View style={styles.iconContainer}>
-        <Ionicons name="phone-portrait" size={60} color="#FFD11E" />
-      </View>
-      <Text style={styles.title}>Enter Your Phone Number</Text>
-      <Text style={styles.subtitle}>
-        We'll send you a verification code to get started
-      </Text>
-      
-      <View style={styles.inputContainer}>
-        <Text style={styles.inputLabel}>Phone Number</Text>
-        <TextInput
-          style={styles.input}
-          value={phone}
-          onChangeText={(text) => {
-            setPhone(text);
-            setErrors((prev) => ({ ...prev, phone: '' }));
-          }}
-          placeholder="Enter 10-digit phone number"
-          keyboardType="phone-pad"
-          maxLength={10}
-        />
-        {!!errors.phone && <Text style={{ color: 'red', marginTop: 4 }}>{errors.phone}</Text>}
-      </View>
+  const handleResendOTP = async () => {
+    if (otpCooldown > 0) return;
+    setOtpCooldown(30);
+    try {
+      const response = await fetch('http://localhost:3000/api/auth/send-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ phone })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        Alert.alert('Success', 'OTP resent to your phone number');
+      } else {
+        Alert.alert('Error', data.message || 'Failed to resend OTP');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Network error. Please try again.');
+    }
+  };
 
-      <TouchableOpacity
-        style={[styles.button, loading && styles.buttonDisabled]}
-        onPress={handleSendOTP}
-        disabled={loading || !validatePhone(phone)}
-      >
-        {loading ? (
-          <ActivityIndicator color="#2D3E50" />
-        ) : (
-          <Text style={styles.buttonText}>Send OTP</Text>
-        )}
-      </TouchableOpacity>
-    </View>
-  );
+  // Show loading while checking auth
+  if (isCheckingAuth) {
+    return <SplashAnimation message="Checking authentication..." />;
+  }
 
   const renderOTPStep = () => (
-    <View style={[styles.stepContainer, styles.shadow]}>
-      {otpError ? <Text style={styles.globalError}>{otpError}</Text> : null}
-      <View style={styles.iconContainer}>
-        <Ionicons name="key" size={60} color="#FFD11E" accessibilityLabel="OTP Icon" />
-      </View>
-      <Text style={styles.title}>Enter Verification Code</Text>
-      <Text style={styles.subtitle}>
-        We've sent a 6-digit code to {phone}
-      </Text>
-      <View style={styles.inputContainer}>
-        <Text style={styles.inputLabel}>OTP Code</Text>
-        <TextInput
-          style={styles.input}
-          value={otp}
-          onChangeText={(text) => {
-            setOtp(text);
-            setOtpError('');
-          }}
-          placeholder="Enter 6-digit OTP"
-          keyboardType="number-pad"
-          maxLength={6}
-          accessibilityLabel="OTP Input"
-        />
-        {!!otpError && <Text style={styles.errorText}>{otpError}</Text>}
-      </View>
-      <TouchableOpacity
-        style={[styles.button, (loading || otp.length !== 6) && styles.buttonDisabled]}
-        onPress={handleVerifyOTP}
-        disabled={loading || otp.length !== 6}
-        accessibilityLabel="Verify OTP Button"
-      >
-        {loading ? (
-          <ActivityIndicator color="#2D3E50" />
-        ) : (
-          <Text style={styles.buttonText}>Verify OTP</Text>
-        )}
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.button, otpCooldown > 0 && styles.buttonDisabled]}
-        onPress={handleSendOTP}
-        disabled={otpCooldown > 0}
-        accessibilityLabel="Resend OTP Button"
-      >
-        <Text style={styles.buttonText}>{otpCooldown > 0 ? `Resend OTP (${otpCooldown}s)` : 'Resend OTP'}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => setStep('phone')}
-        accessibilityLabel="Back to Phone Button"
-      >
-        <Text style={styles.backButtonText}>← Back to Phone</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderRegisterStep = () => (
-    <View style={styles.stepContainer}>
-      <View style={styles.iconContainer}>
-        <Ionicons name="person-add" size={60} color="#FFD11E" />
-      </View>
-      <Text style={styles.title}>Complete Your Profile</Text>
-      <Text style={styles.subtitle}>
-        Please provide your details to complete registration
-      </Text>
-      
-      <ScrollView style={styles.formContainer}>
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Full Name *</Text>
-          <TextInput
-            style={styles.input}
-            value={registrationData.full_name}
-            onChangeText={(text) => {
-              setRegistrationData({ ...registrationData, full_name: text });
-              setErrors((prev) => ({ ...prev, full_name: '' }));
-            }}
-            placeholder="Enter your full name"
-          />
-          {!!errors.full_name && <Text style={{ color: 'red', marginTop: 4 }}>{errors.full_name}</Text>}
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Email Address *</Text>
-          <TextInput
-            style={styles.input}
-            value={registrationData.email}
-            onChangeText={(text) => {
-              setRegistrationData({ ...registrationData, email: text });
-              setErrors((prev) => ({ ...prev, email: '' }));
-            }}
-            placeholder="Enter your email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          {!!errors.email && <Text style={{ color: 'red', marginTop: 4 }}>{errors.email}</Text>}
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Age *</Text>
-          <TextInput
-            style={styles.input}
-            value={registrationData.age}
-            onChangeText={(text) => {
-              setRegistrationData({ ...registrationData, age: text });
-              setErrors((prev) => ({ ...prev, age: '' }));
-            }}
-            placeholder="Enter your age"
-            keyboardType="number-pad"
-          />
-          {!!errors.age && <Text style={{ color: 'red', marginTop: 4 }}>{errors.age}</Text>}
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Pincode *</Text>
-          <TextInput
-            style={styles.input}
-            value={registrationData.pincode}
-            onChangeText={(text) => {
-              setRegistrationData({ ...registrationData, pincode: text });
-              setErrors((prev) => ({ ...prev, pincode: '' }));
-            }}
-            placeholder="Enter your pincode"
-            keyboardType="number-pad"
-            maxLength={6}
-          />
-          {!!errors.pincode && <Text style={{ color: 'red', marginTop: 4 }}>{errors.pincode}</Text>}
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Address *</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={registrationData.address}
-            onChangeText={(text) => {
-              setRegistrationData({ ...registrationData, address: text });
-              setErrors((prev) => ({ ...prev, address: '' }));
-            }}
-            placeholder="Enter your complete address"
-            multiline
-            numberOfLines={3}
-          />
-          {!!errors.address && <Text style={{ color: 'red', marginTop: 4 }}>{errors.address}</Text>}
-        </View>
-        {!!errors.general && <Text style={{ color: 'red', marginTop: 4 }}>{errors.general}</Text>}
-      </ScrollView>
-
-      <TouchableOpacity
-        style={[styles.button, loading && styles.buttonDisabled]}
-        onPress={handleRegister}
-        disabled={loading || !registrationData.full_name || !validateEmail(registrationData.email) || !registrationData.age || !registrationData.pincode || !registrationData.address}
-      >
-        {loading ? (
-          <ActivityIndicator color="#2D3E50" />
-        ) : (
-          <Text style={styles.buttonText}>Complete Registration</Text>
-        )}
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => setStep('otp')}
-      >
-        <Text style={styles.backButtonText}>← Back to OTP</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
-        style={styles.keyboardView}
+        style={styles.keyboardAvoidingView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => router.back()}
+              onPress={() => setStep('phone')}
             >
-              <Ionicons name="arrow-back" size={24} color="#2D3E50" />
+              <Ionicons name="arrow-back" size={24} color={Colors.light.secondary} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Cycle-Bees</Text>
-            <View style={{ width: 24 }} />
+            <Text style={styles.headerTitle}>Verify OTP</Text>
+            <View style={styles.placeholder} />
           </View>
 
-          {step === 'phone' && renderPhoneStep()}
-          {step === 'otp' && renderOTPStep()}
-          {step === 'register' && renderRegisterStep()}
+          {/* Logo */}
+          <View style={styles.logoSection}>
+            <View style={styles.logoContainer}>
+              <Ionicons name="bicycle" size={40} color={Colors.light.primary} />
+            </View>
+            <Text style={styles.appName}>Cycle-Bees</Text>
+          </View>
+
+          {/* OTP Form */}
+          <View style={styles.formCard}>
+            <Text style={styles.formTitle}>Enter OTP</Text>
+            <Text style={styles.formSubtitle}>
+              We've sent a 6-digit code to +91 {phone}
+            </Text>
+
+            <View style={styles.otpContainer}>
+              <TextInput
+                style={styles.otpInput}
+                placeholder="Enter 6-digit OTP"
+                placeholderTextColor={Colors.light.gray}
+                value={otp}
+                onChangeText={setOtp}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus={true}
+              />
+            </View>
+
+            {otpError ? (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle" size={16} color={Colors.light.error} />
+                <Text style={styles.errorText}>{otpError}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={[
+                styles.verifyButton,
+                (!otp || otp.length !== 6 || loading) && styles.verifyButtonDisabled,
+              ]}
+              onPress={handleVerifyOTP}
+              disabled={!otp || otp.length !== 6 || loading}
+            >
+              {loading ? (
+                <ActivityIndicator color={Colors.light.background} size="small" />
+              ) : (
+                <Text style={styles.verifyButtonText}>Verify OTP</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.resendButton,
+                otpCooldown > 0 && styles.resendButtonDisabled,
+              ]}
+              onPress={handleResendOTP}
+              disabled={otpCooldown > 0}
+            >
+              <Text style={styles.resendButtonText}>
+                {otpCooldown > 0 ? `Resend in ${otpCooldown}s` : 'Resend OTP'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
+
+  const renderRegisterStep = () => (
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => setStep('otp')}
+            >
+              <Ionicons name="arrow-back" size={24} color={Colors.light.secondary} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Complete Profile</Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          {/* Logo */}
+          <View style={styles.logoSection}>
+            <View style={styles.logoContainer}>
+              <Ionicons name="bicycle" size={40} color={Colors.light.primary} />
+            </View>
+            <Text style={styles.appName}>Cycle-Bees</Text>
+          </View>
+
+          {/* Registration Form */}
+          <View style={styles.formCard}>
+            <Text style={styles.formTitle}>Create Your Profile</Text>
+            <Text style={styles.formSubtitle}>
+              Please provide your details to complete registration
+            </Text>
+
+            {errors.general ? (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle" size={16} color={Colors.light.error} />
+                <Text style={styles.errorText}>{errors.general}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Full Name *</Text>
+              <TextInput
+                style={[styles.input, errors.full_name && styles.inputError]}
+                placeholder="Enter your full name"
+                placeholderTextColor={Colors.light.gray}
+                value={registrationData.full_name}
+                onChangeText={(text) => setRegistrationData(prev => ({ ...prev, full_name: text }))}
+              />
+              {errors.full_name ? (
+                <Text style={styles.fieldErrorText}>{errors.full_name}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Email Address *</Text>
+              <TextInput
+                style={[styles.input, errors.email && styles.inputError]}
+                placeholder="Enter your email"
+                placeholderTextColor={Colors.light.gray}
+                value={registrationData.email}
+                onChangeText={(text) => setRegistrationData(prev => ({ ...prev, email: text }))}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              {errors.email ? (
+                <Text style={styles.fieldErrorText}>{errors.email}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Age *</Text>
+              <TextInput
+                style={[styles.input, errors.age && styles.inputError]}
+                placeholder="Enter your age"
+                placeholderTextColor={Colors.light.gray}
+                value={registrationData.age}
+                onChangeText={(text) => setRegistrationData(prev => ({ ...prev, age: text }))}
+                keyboardType="number-pad"
+              />
+              {errors.age ? (
+                <Text style={styles.fieldErrorText}>{errors.age}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Pincode *</Text>
+              <TextInput
+                style={[styles.input, errors.pincode && styles.inputError]}
+                placeholder="Enter 6-digit pincode"
+                placeholderTextColor={Colors.light.gray}
+                value={registrationData.pincode}
+                onChangeText={(text) => setRegistrationData(prev => ({ ...prev, pincode: text }))}
+                keyboardType="number-pad"
+                maxLength={6}
+              />
+              {errors.pincode ? (
+                <Text style={styles.fieldErrorText}>{errors.pincode}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Address *</Text>
+              <TextInput
+                style={[styles.input, styles.textArea, errors.address && styles.inputError]}
+                placeholder="Enter your complete address"
+                placeholderTextColor={Colors.light.gray}
+                value={registrationData.address}
+                onChangeText={(text) => setRegistrationData(prev => ({ ...prev, address: text }))}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+              {errors.address ? (
+                <Text style={styles.fieldErrorText}>{errors.address}</Text>
+              ) : null}
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.registerButton,
+                loading && styles.registerButtonDisabled,
+              ]}
+              onPress={handleRegister}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color={Colors.light.background} size="small" />
+              ) : (
+                <Text style={styles.registerButtonText}>Create Account</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+
+  // Render based on current step
+  if (step === 'phone') {
+    return <ModernLoginScreen onSendOTP={handleSendOTP} loading={loading} />;
+  }
+
+  if (step === 'otp') {
+    return renderOTPStep();
+  }
+
+  if (step === 'register') {
+    return renderRegisterStep();
+  }
+
+  return null;
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.light.background,
   },
-  keyboardView: {
+  keyboardAvoidingView: {
     flex: 1,
   },
-  scrollContainer: {
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
     flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#FFD11E',
+    justifyContent: 'space-between',
+    marginBottom: 40,
+  },
+  backButton: {
+    padding: 8,
   },
   headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.secondary,
+  },
+  placeholder: {
+    width: 40,
+  },
+  logoSection: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  logoContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.light.accent1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  appName: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2D3E50',
+    color: Colors.light.secondary,
   },
-  stepContainer: {
-    flex: 1,
-    padding: 20,
-    justifyContent: 'center',
+  formCard: {
+    backgroundColor: Colors.light.cardBackground,
+    borderRadius: 16,
+    padding: 24,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: Colors.light.shadow,
+        shadowOffset: {
+          width: 0,
+          height: 4,
+        },
+        shadowOpacity: 1,
+        shadowRadius: 20,
+        elevation: 4,
+      },
+    }),
   },
-  iconContainer: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  title: {
-    fontSize: 24,
+  formTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#2D3E50',
+    color: Colors.light.secondary,
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#4A4A4A',
+  formSubtitle: {
+    fontSize: 14,
+    color: Colors.light.gray,
     textAlign: 'center',
-    marginBottom: 30,
-    lineHeight: 24,
+    marginBottom: 24,
+    lineHeight: 20,
   },
-  formContainer: {
-    maxHeight: 400,
+  otpContainer: {
+    marginBottom: 20,
   },
-  inputContainer: {
+  otpInput: {
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    fontSize: 18,
+    textAlign: 'center',
+    letterSpacing: 8,
+    color: Colors.light.secondary,
+    backgroundColor: Colors.light.background,
+  },
+  inputGroup: {
     marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#2D3E50',
+    color: Colors.light.secondary,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
-    borderRadius: 10,
-    padding: 15,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     fontSize: 16,
-    color: '#2D3E50',
+    color: Colors.light.secondary,
+    backgroundColor: Colors.light.background,
+  },
+  inputError: {
+    borderColor: Colors.light.error,
   },
   textArea: {
     height: 80,
     textAlignVertical: 'top',
   },
-  button: {
-    backgroundColor: '#FFD11E',
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 10,
+  errorContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#2D3E50',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  backButton: {
-    alignItems: 'center',
-    padding: 10,
-  },
-  backButtonText: {
-    color: '#4A4A4A',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  shadow: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-  },
-  globalError: {
-    color: '#fff',
-    backgroundColor: '#dc3545',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 10,
-    textAlign: 'center',
-    fontWeight: 'bold',
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
   errorText: {
-    color: '#dc3545',
+    fontSize: 14,
+    color: Colors.light.error,
+    marginLeft: 6,
+  },
+  fieldErrorText: {
+    fontSize: 12,
+    color: Colors.light.error,
     marginTop: 4,
+    marginLeft: 4,
+  },
+  verifyButton: {
+    backgroundColor: Colors.light.primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  verifyButtonDisabled: {
+    backgroundColor: Colors.light.gray,
+    opacity: 0.6,
+  },
+  verifyButtonText: {
+    fontSize: 16,
     fontWeight: '600',
+    color: Colors.light.background,
+  },
+  resendButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  resendButtonDisabled: {
+    opacity: 0.5,
+  },
+  resendButtonText: {
+    fontSize: 14,
+    color: Colors.light.primary,
+    fontWeight: '600',
+  },
+  registerButton: {
+    backgroundColor: Colors.light.primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  registerButtonDisabled: {
+    backgroundColor: Colors.light.gray,
+    opacity: 0.6,
+  },
+  registerButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.background,
   },
 }); 

@@ -149,29 +149,30 @@ router.get('/admin/:id', authenticateToken, requireAdmin, (req, res) => {
 
 // 3. Create promotional card (Admin)
 router.post('/admin', authenticateToken, requireAdmin, upload.single('image'), [
-    body('title').notEmpty().withMessage('Title is required'),
-    body('description').optional(),
-    body('externalLink').optional().isURL().withMessage('Invalid external link'),
+    body('title').notEmpty().trim().withMessage('Title is required and cannot be empty'),
+    body('description').optional().trim(),
+    body('externalLink').optional().custom((value) => {
+        if (!value || value === '') return true; // Allow empty strings
+        
+        // Check if it's an internal route (starts with /)
+        if (value.startsWith('/')) {
+            return true;
+        }
+        
+        // Check if it's a valid external URL
+        try {
+            new URL(value);
+            return true;
+        } catch {
+            throw new Error('Invalid link format. Use a valid URL (https://example.com) or internal route (like /profile)');
+        }
+    }).withMessage('Invalid link format. Use a valid URL (https://example.com) or internal route (like /profile)'),
     body('displayOrder').optional().isInt({ min: 0 }).withMessage('Display order must be a positive integer'),
     body('isActive').optional().custom((value) => {
         if (value === 'true' || value === true) return true;
         if (value === 'false' || value === false) return false;
         throw new Error('isActive must be a boolean');
-    }).withMessage('isActive must be a boolean'),
-    body('startsAt').optional().custom((value) => {
-        if (!value || value === '') return true; // Allow empty
-        if (new Date(value).toString() === 'Invalid Date') {
-            throw new Error('Invalid start date format');
-        }
-        return true;
-    }).withMessage('Invalid start date'),
-    body('endsAt').optional().custom((value) => {
-        if (!value || value === '') return true; // Allow empty
-        if (new Date(value).toString() === 'Invalid Date') {
-            throw new Error('Invalid end date format');
-        }
-        return true;
-    }).withMessage('Invalid end date')
+    }).withMessage('isActive must be a boolean')
 ], (req, res) => {
     console.log('Received promotional card data:', req.body);
     console.log('Files:', req.file);
@@ -191,9 +192,7 @@ router.post('/admin', authenticateToken, requireAdmin, upload.single('image'), [
         description,
         externalLink,
         displayOrder = 0,
-        isActive = true,
-        startsAt,
-        endsAt
+        isActive = true
     } = req.body;
     
     // Convert string boolean to actual boolean
@@ -204,11 +203,11 @@ router.post('/admin', authenticateToken, requireAdmin, upload.single('image'), [
     db.run(
         `INSERT INTO promotional_cards (
             title, description, image_url, external_link, display_order, 
-            is_active, starts_at, ends_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            is_active
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
         [
             title, description, imageUrl, externalLink, displayOrder,
-            isActiveBool ? 1 : 0, startsAt, endsAt
+            isActiveBool ? 1 : 0
         ],
         function(err) {
             if (err) {
@@ -234,29 +233,30 @@ router.post('/admin', authenticateToken, requireAdmin, upload.single('image'), [
 
 // 4. Update promotional card (Admin)
 router.put('/admin/:id', authenticateToken, requireAdmin, upload.single('image'), [
-    body('title').optional().notEmpty().withMessage('Title cannot be empty'),
-    body('description').optional(),
-    body('externalLink').optional().isURL().withMessage('Invalid external link'),
+    body('title').optional().notEmpty().trim().withMessage('Title cannot be empty'),
+    body('description').optional().trim(),
+    body('externalLink').optional().custom((value) => {
+        if (!value || value === '') return true; // Allow empty strings
+        
+        // Check if it's an internal route (starts with /)
+        if (value.startsWith('/')) {
+            return true;
+        }
+        
+        // Check if it's a valid external URL
+        try {
+            new URL(value);
+            return true;
+        } catch {
+            throw new Error('Invalid link format. Use a valid URL (https://example.com) or internal route (like /profile)');
+        }
+    }).withMessage('Invalid link format. Use a valid URL (https://example.com) or internal route (like /profile)'),
     body('displayOrder').optional().isInt({ min: 0 }).withMessage('Display order must be a positive integer'),
     body('isActive').optional().custom((value) => {
         if (value === 'true' || value === true) return true;
         if (value === 'false' || value === false) return false;
         throw new Error('isActive must be a boolean');
-    }).withMessage('isActive must be a boolean'),
-    body('startsAt').optional().custom((value) => {
-        if (!value || value === '') return true; // Allow empty
-        if (new Date(value).toString() === 'Invalid Date') {
-            throw new Error('Invalid start date format');
-        }
-        return true;
-    }).withMessage('Invalid start date'),
-    body('endsAt').optional().custom((value) => {
-        if (!value || value === '') return true; // Allow empty
-        if (new Date(value).toString() === 'Invalid Date') {
-            throw new Error('Invalid end date format');
-        }
-        return true;
-    }).withMessage('Invalid end date')
+    }).withMessage('isActive must be a boolean')
 ], (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -274,9 +274,7 @@ router.put('/admin/:id', authenticateToken, requireAdmin, upload.single('image')
         description,
         externalLink,
         displayOrder,
-        isActive,
-        startsAt,
-        endsAt
+        isActive
     } = req.body;
     
     // Build update query dynamically
@@ -303,14 +301,6 @@ router.put('/admin/:id', authenticateToken, requireAdmin, upload.single('image')
         fields.push('is_active = ?');
         const isActiveBool = isActive === 'true' || isActive === true;
         values.push(isActiveBool ? 1 : 0);
-    }
-    if (startsAt !== undefined) {
-        fields.push('starts_at = ?');
-        values.push(startsAt);
-    }
-    if (endsAt !== undefined) {
-        fields.push('ends_at = ?');
-        values.push(endsAt);
     }
     
     // Handle image upload
@@ -411,17 +401,13 @@ router.delete('/admin/:id', authenticateToken, requireAdmin, (req, res) => {
 
 // 1. Get active promotional cards (User)
 router.get('/cards', (req, res) => {
-    const now = new Date().toISOString();
-    
     db.all(`
         SELECT 
             id, title, description, image_url, external_link, display_order
         FROM promotional_cards 
         WHERE is_active = 1 
-        AND (starts_at IS NULL OR starts_at <= ?)
-        AND (ends_at IS NULL OR ends_at >= ?)
         ORDER BY display_order ASC, created_at DESC
-    `, [now, now], (err, cards) => {
+    `, (err, cards) => {
         if (err) {
             console.error('Error fetching active promotional cards:', err);
             return res.status(500).json({

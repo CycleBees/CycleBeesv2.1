@@ -184,8 +184,6 @@ CREATE TABLE IF NOT EXISTS promotional_cards (
     external_link VARCHAR(255),
     display_order INTEGER DEFAULT 0,
     is_active BOOLEAN DEFAULT 1,
-    starts_at DATETIME,
-    ends_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

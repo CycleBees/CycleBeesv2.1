@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import AuthGuard from '@/components/AuthGuard';
 
 interface User {
   id: number;
@@ -228,6 +229,7 @@ export default function ProfileScreen() {
   }
 
   return (
+    <AuthGuard message="Loading your profile...">
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
@@ -400,6 +402,7 @@ export default function ProfileScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+    </AuthGuard>
   );
 }
 

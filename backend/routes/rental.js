@@ -762,7 +762,8 @@ router.get('/requests', authenticateToken, requireUser, (req, res) => {
         SELECT 
             rr.*,
             b.name as bicycle_name,
-            b.model as bicycle_model
+            b.model as bicycle_model,
+            b.delivery_charge
         FROM rental_requests rr
         LEFT JOIN bicycles b ON rr.bicycle_id = b.id
         WHERE rr.user_id = ?
