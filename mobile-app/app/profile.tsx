@@ -9,7 +9,10 @@ import {
   Alert,
   ActivityIndicator,
   Image,
-  Platform
+  Platform,
+  RefreshControl,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,22 +23,24 @@ import AuthGuard from '@/components/AuthGuard';
 
 interface User {
   id: number;
-  full_name: string;
+  fullName: string;
   email: string;
   phone: string;
   age: number;
   pincode: string;
   address: string;
-  profile_photo: string;
-  created_at: string;
-  last_login: string;
+  profilePhoto: string;
+  created_at?: string;
+  last_login?: string;
 }
 
 export default function ProfileScreen() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [editData, setEditData] = useState({
     full_name: '',
     email: '',
@@ -52,6 +57,11 @@ export default function ProfileScreen() {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        console.log('No token found');
+        return;
+      }
+
       const response = await fetch('http://localhost:3000/api/auth/profile', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -60,15 +70,27 @@ export default function ProfileScreen() {
       });
 
       if (response.ok) {
-        const userData = await response.json();
-        setUser(userData);
-        setEditData({
-          full_name: userData.full_name,
-          email: userData.email,
-          age: userData.age.toString(),
-          pincode: userData.pincode,
-          address: userData.address
-        });
+        const data = await response.json();
+        console.log('Profile data received:', data); // Debug log
+        
+        if (data.success && data.data && data.data.user) {
+          const userData = data.data.user;
+          console.log('User data extracted:', userData); // Debug log
+          setUser(userData);
+          setEditData({
+            full_name: userData.fullName || '',
+            email: userData.email || '',
+            age: userData.age ? userData.age.toString() : '',
+            pincode: userData.pincode || '',
+            address: userData.address || ''
+          });
+        } else {
+          console.error('Invalid profile data format:', data);
+        }
+      } else {
+        console.error('Failed to fetch profile:', response.status);
+        const errorData = await response.json();
+        console.error('Error response:', errorData);
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
@@ -77,16 +99,27 @@ export default function ProfileScreen() {
     }
   };
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchUserProfile();
+    setRefreshing(false);
+  };
 
-    if (!result.canceled && result.assets[0]) {
-      uploadProfilePhoto(result.assets[0].uri);
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        uploadProfilePhoto(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
 
@@ -114,9 +147,11 @@ export default function ProfileScreen() {
         Alert.alert('Success', 'Profile photo updated successfully!');
         fetchUserProfile(); // Refresh profile data
       } else {
-        Alert.alert('Error', 'Failed to update profile photo');
+        const errorData = await response.json();
+        Alert.alert('Error', errorData.message || 'Failed to update profile photo');
       }
     } catch (error) {
+      console.error('Error uploading photo:', error);
       Alert.alert('Error', 'Network error. Please try again.');
     } finally {
       setLoading(false);
@@ -140,7 +175,7 @@ export default function ProfileScreen() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          full_name: editData.full_name,
+          fullName: editData.full_name,
           email: editData.email,
           age: parseInt(editData.age),
           pincode: editData.pincode,
@@ -149,14 +184,20 @@ export default function ProfileScreen() {
       });
 
       if (response.ok) {
-        Alert.alert('Success', 'Profile updated successfully!');
-        setEditing(false);
-        fetchUserProfile(); // Refresh profile data
+        const data = await response.json();
+        if (data.success) {
+          Alert.alert('Success', 'Profile updated successfully!');
+          setEditing(false);
+          fetchUserProfile(); // Refresh profile data
+        } else {
+          Alert.alert('Error', data.message || 'Failed to update profile');
+        }
       } else {
         const error = await response.json();
         Alert.alert('Error', error.message || 'Failed to update profile');
       }
     } catch (error) {
+      console.error('Error saving profile:', error);
       Alert.alert('Error', 'Network error. Please try again.');
     } finally {
       setLoading(false);
@@ -164,244 +205,323 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('Logging out from profile...');
-              
-              // Clear all storage
-              await AsyncStorage.clear();
-              console.log('All storage cleared');
-              
-              // Platform-specific navigation
-              if (Platform.OS === 'web') {
-                // Force page reload for web
-                window.location.href = '/login';
-                console.log('Web: Reloaded to login page');
-              } else {
-                // Use router for native
-                setTimeout(() => {
-                  router.push('/login');
-                  console.log('Native: Navigated to login');
-                }, 100);
-              }
-              
-            } catch (error) {
-              console.error('Logout error:', error);
-              Alert.alert('Error', 'Failed to logout. Please try again.');
-            }
-          }
-        }
-      ]
-    );
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = async () => {
+    setShowLogoutModal(false);
+    try {
+      console.log('Logging out from profile...');
+      
+      // Clear all storage
+      await AsyncStorage.clear();
+      console.log('All storage cleared');
+      
+      // Platform-specific navigation
+      if (Platform.OS === 'web') {
+        // Force page reload for web
+        window.location.href = '/login';
+        console.log('Web: Reloaded to login page');
+      } else {
+        // Use router for native
+        setTimeout(() => {
+          router.push('/login');
+          console.log('Native: Navigated to login');
+        }, 100);
+      }
+      
+    } catch (error) {
+      console.error('Logout error:', error);
+      Alert.alert('Error', 'Failed to logout. Please try again.');
+    }
+  };
+
+  const cancelLogout = () => {
+    setShowLogoutModal(false);
   };
 
   if (loading && !user) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FFD11E" />
-          <Text style={styles.loadingText}>Loading profile...</Text>
-        </View>
-      </SafeAreaView>
+      <AuthGuard message="Loading your profile...">
+        <SafeAreaView style={styles.container}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#FFD11E" />
+            <Text style={styles.loadingText}>Loading profile...</Text>
+          </View>
+        </SafeAreaView>
+      </AuthGuard>
     );
   }
 
   if (!user) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="person-outline" size={60} color="#4A4A4A" />
-          <Text style={styles.errorText}>Failed to load profile</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchUserProfile}>
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <AuthGuard message="Loading your profile...">
+        <SafeAreaView style={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Ionicons name="arrow-back" size={24} color="#2D3E50" />
+            </TouchableOpacity>
+            <View style={styles.headerContent}>
+              <Text style={styles.headerTitle}>My Profile</Text>
+              <Text style={styles.headerSubtitle}>Manage your account</Text>
+            </View>
+            <View style={{ width: 24 }} />
+          </View>
+          
+          <View style={styles.errorContainer}>
+            <Ionicons name="person-outline" size={60} color="#4A4A4A" />
+            <Text style={styles.errorTitle}>Failed to load profile</Text>
+            <Text style={styles.errorSubtitle}>Please check your connection and try again</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={fetchUserProfile}>
+              <Ionicons name="refresh-outline" size={20} color="#2D3E50" />
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </AuthGuard>
     );
   }
 
   return (
     <AuthGuard message="Loading your profile...">
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#2D3E50" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={24} color="#2D3E50" />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.scrollView}>
-        {/* Profile Photo Section */}
-        <View style={styles.profileSection}>
-          <View style={styles.profileImageContainer}>
-            {user.profile_photo ? (
-              <Image
-                source={{ uri: `http://localhost:3000/${user.profile_photo}` }}
-                style={styles.profileImage}
-              />
-            ) : (
-              <View style={styles.profileImagePlaceholder}>
-                <Ionicons name="person" size={60} color="#4A4A4A" />
-              </View>
-            )}
-            <TouchableOpacity style={styles.editImageButton} onPress={pickImage}>
-              <Ionicons name="camera" size={20} color="#fff" />
-            </TouchableOpacity>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color="#2D3E50" />
+          </TouchableOpacity>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>My Profile</Text>
+            <Text style={styles.headerSubtitle}>Manage your account</Text>
           </View>
-          <Text style={styles.userName}>{user.full_name}</Text>
-          <Text style={styles.userEmail}>{user.email}</Text>
-        </View>
-
-        {/* Profile Actions */}
-        <View style={styles.actionsSection}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => setEditing(!editing)}
-          >
-            <Ionicons name="create-outline" size={20} color="#2D3E50" />
-            <Text style={styles.actionButtonText}>
-              {editing ? 'Cancel Edit' : 'Edit Profile'}
-            </Text>
+          <TouchableOpacity onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={24} color="#2D3E50" />
           </TouchableOpacity>
         </View>
 
-        {/* Profile Information */}
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Personal Information</Text>
-          
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Full Name</Text>
-            {editing ? (
-              <TextInput
-                style={styles.input}
-                value={editData.full_name}
-                onChangeText={(text) => setEditData({...editData, full_name: text})}
-                placeholder="Enter full name"
+        <ScrollView 
+          style={styles.scrollView}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
+          {/* Profile Photo Section */}
+          <View style={styles.profileCard}>
+            <View style={styles.profileImageContainer}>
+                          {user.profilePhoto ? (
+              <Image
+                source={{ uri: `http://localhost:3000/${user.profilePhoto}` }}
+                style={styles.profileImage}
               />
             ) : (
-              <Text style={styles.input}>{user.full_name}</Text>
-            )}
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Email</Text>
-            {editing ? (
-              <TextInput
-                style={styles.input}
-                value={editData.email}
-                onChangeText={(text) => setEditData({...editData, email: text})}
-                placeholder="Enter email"
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            ) : (
-              <Text style={styles.input}>{user.email}</Text>
-            )}
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Phone</Text>
-            <Text style={styles.input}>{user.phone}</Text>
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Age</Text>
-            {editing ? (
-              <TextInput
-                style={styles.input}
-                value={editData.age}
-                onChangeText={(text) => setEditData({...editData, age: text})}
-                placeholder="Enter age"
-                keyboardType="number-pad"
-              />
-            ) : (
-              <Text style={styles.input}>{user.age} years</Text>
-            )}
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Pincode</Text>
-            {editing ? (
-              <TextInput
-                style={styles.input}
-                value={editData.pincode}
-                onChangeText={(text) => setEditData({...editData, pincode: text})}
-                placeholder="Enter pincode"
-                keyboardType="number-pad"
-                maxLength={6}
-              />
-            ) : (
-              <Text style={styles.input}>{user.pincode}</Text>
-            )}
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Address</Text>
-            {editing ? (
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={editData.address}
-                onChangeText={(text) => setEditData({...editData, address: text})}
-                placeholder="Enter address"
-                multiline
-                numberOfLines={3}
-              />
-            ) : (
-              <Text style={styles.input}>{user.address}</Text>
-            )}
-          </View>
-        </View>
-
-        {/* Account Information */}
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Account Information</Text>
-          
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Member Since</Text>
-            <Text style={styles.input}>
-              {new Date(user.created_at).toLocaleDateString()}
-            </Text>
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Last Login</Text>
-            <Text style={styles.input}>
-              {user.last_login ? new Date(user.last_login).toLocaleString() : 'Never'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Save Button */}
-        {editing && (
-          <View style={styles.saveSection}>
-            <TouchableOpacity
-              style={[styles.saveButton, loading && styles.disabledButton]}
-              onPress={handleSaveProfile}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Text style={styles.saveButtonText}>Save Changes</Text>
-                </>
+                <View style={styles.profileImagePlaceholder}>
+                  <Ionicons name="person" size={50} color="#4A4A4A" />
+                </View>
               )}
+              <TouchableOpacity style={styles.editImageButton} onPress={pickImage}>
+                <Ionicons name="camera" size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.userName}>{user.fullName || 'User'}</Text>
+            <Text style={styles.userEmail}>{user.email || 'No email'}</Text>
+            <Text style={styles.userPhone}>{user.phone || 'No phone'}</Text>
+          </View>
+
+          {/* Edit Profile Button */}
+          <View style={styles.actionsContainer}>
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => setEditing(!editing)}
+            >
+              <Ionicons 
+                name={editing ? "close-outline" : "create-outline"} 
+                size={20} 
+                color="#2D3E50" 
+              />
+              <Text style={styles.editButtonText}>
+                {editing ? 'Cancel Edit' : 'Edit Profile'}
+              </Text>
             </TouchableOpacity>
           </View>
-        )}
-      </ScrollView>
-    </SafeAreaView>
+
+          {/* Personal Information Card */}
+          <View style={styles.infoCard}>
+            <View style={styles.cardHeader}>
+              <Ionicons name="person-outline" size={18} color="#FFD11E" />
+              <Text style={styles.cardTitle}>Personal Information</Text>
+            </View>
+            <View style={styles.cardContent}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Full Name</Text>
+                {editing ? (
+                  <TextInput
+                    style={styles.editInput}
+                    value={editData.full_name}
+                    onChangeText={(text) => setEditData({...editData, full_name: text})}
+                    placeholder="Enter full name"
+                    placeholderTextColor="#6c757d"
+                  />
+                ) : (
+                  <Text style={styles.infoValue}>{user.fullName || 'Not provided'}</Text>
+                )}
+              </View>
+
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Email Address</Text>
+                {editing ? (
+                  <TextInput
+                    style={styles.editInput}
+                    value={editData.email}
+                    onChangeText={(text) => setEditData({...editData, email: text})}
+                    placeholder="Enter email"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    placeholderTextColor="#6c757d"
+                  />
+                ) : (
+                  <Text style={styles.infoValue}>{user.email || 'Not provided'}</Text>
+                )}
+              </View>
+
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Phone Number</Text>
+                <Text style={styles.infoValue}>{user.phone || 'Not provided'}</Text>
+              </View>
+
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Age</Text>
+                {editing ? (
+                  <TextInput
+                    style={styles.editInput}
+                    value={editData.age}
+                    onChangeText={(text) => setEditData({...editData, age: text})}
+                    placeholder="Enter age"
+                    keyboardType="number-pad"
+                    placeholderTextColor="#6c757d"
+                  />
+                ) : (
+                  <Text style={styles.infoValue}>{user.age ? `${user.age} years` : 'Not provided'}</Text>
+                )}
+              </View>
+
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Pincode</Text>
+                {editing ? (
+                  <TextInput
+                    style={styles.editInput}
+                    value={editData.pincode}
+                    onChangeText={(text) => setEditData({...editData, pincode: text})}
+                    placeholder="Enter pincode"
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    placeholderTextColor="#6c757d"
+                  />
+                ) : (
+                  <Text style={styles.infoValue}>{user.pincode || 'Not provided'}</Text>
+                )}
+              </View>
+
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Address</Text>
+                {editing ? (
+                  <TextInput
+                    style={[styles.editInput, styles.textArea]}
+                    value={editData.address}
+                    onChangeText={(text) => setEditData({...editData, address: text})}
+                    placeholder="Enter address"
+                    multiline
+                    numberOfLines={3}
+                    placeholderTextColor="#6c757d"
+                  />
+                ) : (
+                  <Text style={styles.infoValue}>{user.address || 'Not provided'}</Text>
+                )}
+              </View>
+            </View>
+          </View>
+
+          {/* Account Information Card */}
+          <View style={styles.infoCard}>
+            <View style={styles.cardHeader}>
+              <Ionicons name="information-circle-outline" size={18} color="#FFD11E" />
+              <Text style={styles.cardTitle}>Account Information</Text>
+            </View>
+            <View style={styles.cardContent}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Member Since</Text>
+                <Text style={styles.infoValue}>
+                  {user.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'}
+                </Text>
+              </View>
+
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Last Login</Text>
+                <Text style={styles.infoValue}>
+                  {user.last_login ? new Date(user.last_login).toLocaleString() : 'Never'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Save Button */}
+          {editing && (
+            <View style={styles.saveContainer}>
+              <TouchableOpacity
+                style={[styles.saveButton, loading && styles.disabledButton]}
+                onPress={handleSaveProfile}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-outline" size={20} color="#fff" />
+                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
+        
+        {/* Enhanced Logout Modal */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={showLogoutModal}
+          onRequestClose={cancelLogout}
+        >
+          <Pressable style={styles.modalOverlay} onPress={cancelLogout}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <View style={styles.modalIconContainer}>
+                  <Ionicons name="log-out-outline" size={32} color="#FFD11E" />
+                </View>
+                <Text style={styles.modalTitle}>Logout</Text>
+              </View>
+              
+              <Text style={styles.modalMessage}>
+                Are you sure you want to logout from Cycle-Bees?
+              </Text>
+              
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={cancelLogout}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalLogoutButton]}
+                  onPress={confirmLogout}
+                >
+                  <Text style={styles.logoutButtonText}>Logout</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Pressable>
+        </Modal>
+      </SafeAreaView>
     </AuthGuard>
   );
 }
@@ -411,176 +531,246 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  scrollView: {
-    flex: 1,
-  },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
     backgroundColor: '#FFD11E',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
   },
   headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flex: 1,
     alignItems: 'center',
+    marginLeft: 8,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#2D3E50',
+    marginBottom: 2,
   },
-  backButton: {
-    padding: 8,
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#2D3E50',
+    opacity: 0.8,
   },
-  content: {
+  scrollView: {
     flex: 1,
-    padding: 20,
+    padding: 12,
   },
-  profileSection: {
+  profileCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 16,
     alignItems: 'center',
-    marginBottom: 30,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 4,
+      },
+    }),
   },
   profileImageContainer: {
     position: 'relative',
-    marginBottom: 15,
+    marginBottom: 16,
   },
   profileImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: '#FFF5CC',
   },
   profileImagePlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#f0f0f0',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#f8f9fa',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#dee2e6',
   },
   editImageButton: {
     position: 'absolute',
     bottom: 0,
     right: 0,
     backgroundColor: '#FFD11E',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
+    borderRadius: 18,
+    width: 36,
+    height: 36,
     justifyContent: 'center',
     alignItems: 'center',
     ...Platform.select({
       web: {
-        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.2)',
       },
       default: {
         shadowColor: '#000',
-        shadowOffset: {
-          width: 0,
-          height: 2,
-        },
-        shadowOpacity: 0.1,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
         shadowRadius: 4,
         elevation: 3,
       },
     }),
   },
   userName: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#2D3E50',
-    marginBottom: 5,
+    marginBottom: 4,
+    textAlign: 'center',
   },
   userEmail: {
     fontSize: 16,
     color: '#4A4A4A',
+    marginBottom: 4,
+    textAlign: 'center',
   },
-  actionsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
+  userPhone: {
+    fontSize: 16,
+    color: '#4A4A4A',
+    textAlign: 'center',
   },
-  actionButton: {
+  actionsContainer: {
+    marginBottom: 16,
+  },
+  editButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fff',
-    paddingVertical: 15,
+    paddingVertical: 14,
     paddingHorizontal: 20,
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    gap: 10,
-  },
-  actionButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2D3E50',
-  },
-  formSection: {
-    backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    gap: 8,
     ...Platform.select({
       web: {
         boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
       },
       default: {
         shadowColor: '#000',
-        shadowOffset: {
-          width: 0,
-          height: 2,
-        },
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
         elevation: 3,
       },
     }),
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2D3E50',
-    marginBottom: 20,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  inputLabel: {
+  editButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#2D3E50',
-    marginBottom: 8,
   },
-  input: {
+  infoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 4,
+      },
+    }),
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginLeft: 10,
+  },
+  cardContent: {
+    gap: 16,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: 8,
+  },
+  infoLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2D3E50',
+    flex: 1,
+  },
+  infoValue: {
+    fontSize: 15,
+    color: '#4A4A4A',
+    flex: 2,
+    textAlign: 'right',
+  },
+  editInput: {
     backgroundColor: '#f8f9fa',
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: '#dee2e6',
     borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    fontSize: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
     color: '#2D3E50',
+    flex: 2,
+    textAlign: 'right',
   },
   textArea: {
     height: 80,
     textAlignVertical: 'top',
+    textAlign: 'left',
   },
-  saveSection: {
-    paddingHorizontal: 20,
+  saveContainer: {
+    paddingHorizontal: 12,
     paddingBottom: 30,
   },
   saveButton: {
     backgroundColor: '#28a745',
-    paddingVertical: 15,
-    borderRadius: 10,
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 4px 8px rgba(40, 167, 69, 0.3)',
+      },
+      default: {
+        shadowColor: '#28a745',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 4,
+      },
+    }),
   },
   saveButtonText: {
     color: '#fff',
@@ -594,33 +784,138 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f5f5f5',
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 16,
     fontSize: 16,
     color: '#4A4A4A',
+    fontWeight: '500',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: '#f5f5f5',
   },
-  errorText: {
-    fontSize: 18,
-    color: '#4A4A4A',
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2D3E50',
     marginTop: 20,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorSubtitle: {
+    fontSize: 16,
+    color: '#4A4A4A',
     marginBottom: 30,
+    textAlign: 'center',
+    lineHeight: 24,
   },
   retryButton: {
     backgroundColor: '#FFD11E',
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 8,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
   },
   retryButtonText: {
     color: '#2D3E50',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    margin: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 1,
+    shadowRadius: 24,
+    elevation: 12,
+    minWidth: 320,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalIconContainer: {
+    width: 60,
+    height: 60,
+    backgroundColor: '#FFF5CC',
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#4A4A4A',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#FFF5CC',
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+  },
+  cancelButtonText: {
+    color: '#4A4A4A',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalLogoutButton: {
+    backgroundColor: '#dc3545',
+  },
+  logoutButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 

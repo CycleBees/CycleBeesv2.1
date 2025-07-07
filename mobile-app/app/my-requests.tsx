@@ -426,7 +426,7 @@ export default function MyRequestsScreen() {
                     <Text style={styles.dateLabel}>Requested</Text>
                     <Text style={styles.dateValue}>
                       {request.created_at ? new Date(request.created_at).toLocaleDateString() : 'N/A'}
-                    </Text>
+                  </Text>
                   </View>
                 </View>
                 
@@ -802,7 +802,7 @@ export default function MyRequestsScreen() {
                         <Text style={styles.modalAmountValue}>₹{Number(selectedRentalRequest.total_amount) || 0}</Text>
                       </View>
                     </View>
-
+                    
                     {/* Amount Details Card */}
                     <View style={styles.modalInfoCard}>
                       <View style={styles.modalCardHeader}>
