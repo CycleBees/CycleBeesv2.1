@@ -1,9 +1,8 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, requireAdmin, requireUser } = require('../middleware/auth');
-const sqlite3 = require('sqlite3').verbose();
-const dbPath = process.env.DB_PATH || './database/cyclebees.db';
-const db = new sqlite3.Database(dbPath);
+const dbConnection = require('../database/connection');
+const db = dbConnection.getDatabase();
 
 const router = express.Router();
 

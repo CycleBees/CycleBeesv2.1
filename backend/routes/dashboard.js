@@ -3,9 +3,8 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
 
 // Database connection
-const sqlite3 = require('sqlite3').verbose();
-const dbPath = process.env.DB_PATH || './database/cyclebees.db';
-const db = new sqlite3.Database(dbPath);
+const dbConnection = require('../database/connection');
+const db = dbConnection.getDatabase();
 
 // ==================== DASHBOARD ROUTES ====================
 

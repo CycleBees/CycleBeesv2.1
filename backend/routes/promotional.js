@@ -7,9 +7,8 @@ const fs = require('fs');
 const router = express.Router();
 
 // Database connection
-const sqlite3 = require('sqlite3').verbose();
-const dbPath = process.env.DB_PATH || './database/cyclebees.db';
-const db = new sqlite3.Database(dbPath);
+const dbConnection = require('../database/connection');
+const db = dbConnection.getDatabase();
 
 // Helper function to transform snake_case to camelCase
 const transformToCamelCase = (obj) => {

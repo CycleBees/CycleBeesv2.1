@@ -9,9 +9,8 @@ const path = require('path');
 const fs = require('fs');
 
 // Database connection
-const sqlite3 = require('sqlite3').verbose();
-const dbPath = process.env.DB_PATH || './database/cyclebees.db';
-const db = new sqlite3.Database(dbPath);
+const dbConnection = require('../database/connection');
+const db = dbConnection.getDatabase();
 
 // Configure multer for profile photo uploads
 const storage = multer.diskStorage({

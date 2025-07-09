@@ -6,7 +6,7 @@ const morgan = require('morgan');
 const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
-const sqlite3 = require('sqlite3').verbose();
+const dbConnection = require('./database/connection');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,15 +33,16 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', message: 'Cycle-Bees backend is running.' });
 });
 
-// Connect to SQLite database
-const dbPath = process.env.DB_PATH || './database/cyclebees.db';
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Failed to connect to database:', err.message);
-    } else {
-        console.log('Connected to SQLite database at', dbPath);
+// Initialize database connection
+async function initializeDatabase() {
+    try {
+        await dbConnection.connect();
+        console.log('Database initialized successfully');
+    } catch (error) {
+        console.error('Failed to initialize database:', error);
+        process.exit(1);
     }
-});
+}
 
 // Routes
 const authRoutes = require('./routes/auth');
@@ -59,16 +60,22 @@ app.use('/api/coupon', couponRoutes);
 app.use('/api/promotional', promotionalRoutes);
 
 // Export app and db for use in routes (future)
-module.exports = { app, db };
+module.exports = { app, db: dbConnection };
 
 // Start server
-app.listen(PORT, () => {
-    console.log(`Cycle-Bees backend listening on port ${PORT}`);
-    console.log(`Health check: http://localhost:${PORT}/health`);
-    console.log(`Auth endpoints: http://localhost:${PORT}/api/auth`);
-    console.log(`Repair endpoints: http://localhost:${PORT}/api/repair`);
-    console.log(`Rental endpoints: http://localhost:${PORT}/api/rental`);
-    console.log(`Dashboard endpoints: http://localhost:${PORT}/api/dashboard`);
-    console.log(`Coupon endpoints: http://localhost:${PORT}/api/coupon`);
-    console.log(`Promotional endpoints: http://localhost:${PORT}/api/promotional`);
-}); 
+async function startServer() {
+    await initializeDatabase();
+    
+    app.listen(PORT, () => {
+        console.log(`Cycle-Bees backend listening on port ${PORT}`);
+        console.log(`Health check: http://localhost:${PORT}/health`);
+        console.log(`Auth endpoints: http://localhost:${PORT}/api/auth`);
+        console.log(`Repair endpoints: http://localhost:${PORT}/api/repair`);
+        console.log(`Rental endpoints: http://localhost:${PORT}/api/rental`);
+        console.log(`Dashboard endpoints: http://localhost:${PORT}/api/dashboard`);
+        console.log(`Coupon endpoints: http://localhost:${PORT}/api/coupon`);
+        console.log(`Promotional endpoints: http://localhost:${PORT}/api/promotional`);
+    });
+}
+
+startServer().catch(console.error); 
