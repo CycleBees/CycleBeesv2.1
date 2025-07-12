@@ -50,6 +50,7 @@ const rentalRoutes = require('./routes/rental');
 const dashboardRoutes = require('./routes/dashboard');
 const couponRoutes = require('./routes/coupon');
 const promotionalRoutes = require('./routes/promotional');
+const contactRoutes = require('./routes/contact');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/repair', repairRoutes);
@@ -57,6 +58,7 @@ app.use('/api/rental', rentalRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/coupon', couponRoutes);
 app.use('/api/promotional', promotionalRoutes);
+app.use('/api/contact', contactRoutes);
 
 // Export app and db for use in routes (future)
 module.exports = { app, db };

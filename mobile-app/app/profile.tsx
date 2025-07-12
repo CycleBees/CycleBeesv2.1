@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import AuthGuard from '@/components/AuthGuard';
 
+
 interface User {
   id: number;
   fullName: string;
@@ -36,6 +37,15 @@ interface User {
 
 export default function ProfileScreen() {
   const router = useRouter();
+
+  const handleBackPress = () => {
+    // Check if we can go back, if not navigate to home
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/home');
+    }
+  };
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -258,7 +268,7 @@ export default function ProfileScreen() {
       <AuthGuard message="Loading your profile...">
         <SafeAreaView style={styles.container}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity onPress={handleBackPress}>
               <Ionicons name="arrow-back" size={24} color="#2D3E50" />
             </TouchableOpacity>
             <View style={styles.headerContent}>
@@ -286,7 +296,7 @@ export default function ProfileScreen() {
     <AuthGuard message="Loading your profile...">
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={handleBackPress}>
             <Ionicons name="arrow-back" size={24} color="#2D3E50" />
           </TouchableOpacity>
           <View style={styles.headerContent}>

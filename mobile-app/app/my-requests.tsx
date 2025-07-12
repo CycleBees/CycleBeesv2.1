@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,18 @@ import {
   Alert,
   Dimensions,
   Platform,
-  Modal
+  Modal,
+  Animated,
+  Easing
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AuthGuard from '@/components/AuthGuard';
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
+
 
 interface RepairRequest {
   id: number;
@@ -34,6 +39,7 @@ interface RepairRequest {
   updated_at: string;
   start_time: string;
   end_time: string;
+  rejection_note?: string;
   services?: Array<{
     id: number;
     name: string;
@@ -60,6 +66,7 @@ interface RentalRequest {
   created_at: string;
   delivery_address: string;
   delivery_charge: number;
+  rejection_note?: string;
 }
 
 const { width } = Dimensions.get('window');
@@ -67,6 +74,18 @@ const { width } = Dimensions.get('window');
 export default function MyRequestsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+
+  const handleBackPress = () => {
+    // Check if we can go back, if not navigate to home
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/home');
+    }
+  };
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
+  
   const [activeTab, setActiveTab] = useState<'repair' | 'rental'>(
     (params.tab as string) === 'rental' ? 'rental' : 'repair'
   );
@@ -80,15 +99,45 @@ export default function MyRequestsScreen() {
   const [selectedRentalRequest, setSelectedRentalRequest] = useState<RentalRequest | null>(null);
   const [showRequestModal, setShowRequestModal] = useState(false);
 
+  // Status update notification modal
+  const [showStatusUpdateModal, setShowStatusUpdateModal] = useState(false);
+  const [statusUpdateInfo, setStatusUpdateInfo] = useState<{
+    type: 'repair' | 'rental';
+    requestId: number;
+    oldStatus: string;
+    newStatus: string;
+    title: string;
+    message: string;
+    icon: string;
+    color: string;
+  } | null>(null);
+  
+  // Track previous statuses for comparison
+  const previousRepairRequests = useRef<RepairRequest[]>([]);
+  const previousRentalRequests = useRef<RentalRequest[]>([]);
+  
+  // Track shown notifications to prevent duplicates
+  const shownNotifications = useRef<Set<string>>(new Set());
+  
+  // Animation values
+  const modalScale = useRef(new Animated.Value(0)).current;
+  const modalOpacity = useRef(new Animated.Value(0)).current;
+  const iconRotation = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     fetchRequests();
     
-    // Auto-refresh every 30 seconds to update countdown and check status changes
+    // Auto-refresh every 5 seconds to update countdown and check status changes
     const interval = setInterval(() => {
       fetchRequests();
-    }, 30000);
+    }, 5000);
     
-    return () => clearInterval(interval);
+    // Cleanup function
+    return () => {
+      clearInterval(interval);
+      // Clear shown notifications when component unmounts or tab changes
+      shownNotifications.current.clear();
+    };
   }, [activeTab]);
 
   const fetchRequests = async () => {
@@ -106,8 +155,13 @@ export default function MyRequestsScreen() {
         
         if (response.ok) {
           const data = await response.json();
-          // Backend returns { success: true, data: [...] }
-          setRepairRequests(data.success && data.data ? data.data : []);
+          const newRequests = data.success && data.data ? data.data : [];
+          
+          // Check for status changes
+          checkStatusChanges('repair', previousRepairRequests.current, newRequests);
+          
+          setRepairRequests(newRequests);
+          previousRepairRequests.current = newRequests;
         } else {
           setRepairRequests([]);
         }
@@ -121,19 +175,19 @@ export default function MyRequestsScreen() {
         
         if (response.ok) {
           const data = await response.json();
-          console.log('Rental requests API response:', data); // Debug log
-          // Backend returns { success: true, data: [...] }
-          const requests = data.success && data.data ? data.data : [];
-          console.log('Rental requests data:', requests); // Debug log
-          setRentalRequests(requests);
+          const newRequests = data.success && data.data ? data.data : [];
+          
+          // Check for status changes
+          checkStatusChanges('rental', previousRentalRequests.current, newRequests);
+          
+          setRentalRequests(newRequests);
+          previousRentalRequests.current = newRequests;
         } else {
-          console.error('Failed to fetch rental requests:', response.status);
           setRentalRequests([]);
         }
       }
     } catch (error) {
       console.error('Error fetching requests:', error);
-      // Set empty arrays on error to prevent map errors
       if (activeTab === 'repair') {
         setRepairRequests([]);
       } else {
@@ -142,6 +196,176 @@ export default function MyRequestsScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const checkStatusChanges = (
+    type: 'repair' | 'rental',
+    previousRequests: any[],
+    newRequests: any[]
+  ) => {
+    if (previousRequests.length === 0) return;
+
+    newRequests.forEach(newRequest => {
+      const previousRequest = previousRequests.find(req => req.id === newRequest.id);
+      if (previousRequest && previousRequest.status !== newRequest.status) {
+        // Create a unique key for this status change
+        const notificationKey = `${type}-${newRequest.id}-${previousRequest.status}-${newRequest.status}`;
+        
+        // Only show notification if we haven't shown it before
+        if (!shownNotifications.current.has(notificationKey)) {
+          shownNotifications.current.add(notificationKey);
+          showStatusUpdateNotification(type, newRequest, previousRequest.status, newRequest.status);
+          
+          // Remove the notification key after 10 seconds to allow future status changes
+          setTimeout(() => {
+            shownNotifications.current.delete(notificationKey);
+          }, 10000);
+        }
+      }
+    });
+  };
+
+  const showStatusUpdateNotification = (
+    type: 'repair' | 'rental',
+    request: any,
+    oldStatus: string,
+    newStatus: string
+  ) => {
+    // Don't show notification if modal is already visible
+    if (showStatusUpdateModal) {
+      return;
+    }
+    
+    const statusConfig = getStatusUpdateConfig(type, request, oldStatus, newStatus);
+    
+    // Reset animation values first
+    modalScale.setValue(0);
+    modalOpacity.setValue(0);
+    iconRotation.setValue(0);
+    
+    // Set the modal info and show modal
+    setStatusUpdateInfo(statusConfig);
+    setShowStatusUpdateModal(true);
+    
+    // Use setTimeout to ensure state is updated before animation starts
+    setTimeout(() => {
+      // Animate modal entrance with smoother timing
+      Animated.parallel([
+        Animated.timing(modalOpacity, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(modalScale, {
+          toValue: 1,
+          duration: 300,
+          easing: Easing.out(Easing.back(1.2)),
+          useNativeDriver: true,
+        }),
+      ]).start();
+      
+      // Animate icon rotation after a slight delay
+      setTimeout(() => {
+        Animated.timing(iconRotation, {
+          toValue: 1,
+          duration: 400,
+          easing: Easing.out(Easing.back(1.1)),
+          useNativeDriver: true,
+        }).start();
+      }, 150);
+    }, 50);
+  };
+
+  const getStatusUpdateConfig = (
+    type: 'repair' | 'rental',
+    request: any,
+    oldStatus: string,
+    newStatus: string
+  ) => {
+    const isPositive = ['approved', 'active', 'active_rental', 'completed'].includes(newStatus);
+    const isNegative = ['rejected', 'expired'].includes(newStatus);
+    const isNeutral = ['waiting_payment', 'arranging_delivery'].includes(newStatus);
+
+    let title = 'Status Update';
+    let message = `Your ${type} request status has been updated to ${newStatus}.`;
+    let icon = 'information-circle';
+    let color = colors.info;
+
+    if (isPositive) {
+      color = colors.success;
+      icon = 'checkmark-circle';
+      if (newStatus === 'approved') {
+        title = 'Request Approved! 🎉';
+        message = type === 'repair' 
+          ? 'Your repair request has been approved. We\'ll contact you soon to arrange the service.'
+          : 'Your rental request has been approved. We\'ll arrange delivery shortly.';
+      } else if (newStatus === 'active' || newStatus === 'active_rental') {
+        title = 'Service Started! 🚀';
+        message = type === 'repair'
+          ? 'Your repair service is now active. Our team is working on your request.'
+          : 'Your rental is now active. Enjoy your ride!';
+      } else if (newStatus === 'completed') {
+        title = 'Service Completed! ✅';
+        message = type === 'repair'
+          ? 'Your repair service has been completed. Thank you for choosing us!'
+          : 'Your rental has been completed. We hope you enjoyed the experience!';
+      }
+    } else if (isNegative) {
+      color = colors.error;
+      icon = 'close-circle';
+      if (newStatus === 'rejected') {
+        title = 'Request Update';
+        message = request.rejection_note || 'Your request has been rejected. Please contact us for more information.';
+      } else if (newStatus === 'expired') {
+        title = 'Request Expired';
+        message = 'Your request has expired. Please submit a new request if needed.';
+      }
+    } else {
+      color = colors.info;
+      icon = 'information-circle';
+      if (newStatus === 'waiting_payment') {
+        title = 'Payment Required';
+        message = 'Please complete the payment to proceed with your request.';
+      } else if (newStatus === 'arranging_delivery') {
+        title = 'Arranging Delivery';
+        message = 'We\'re arranging delivery for your rental. You\'ll be contacted soon.';
+      }
+    }
+
+    return {
+      type,
+      requestId: request.id,
+      oldStatus,
+      newStatus,
+      title,
+      message,
+      icon,
+      color,
+    };
+  };
+
+  const closeStatusUpdateModal = () => {
+    // Animate modal exit
+    Animated.parallel([
+      Animated.timing(modalScale, {
+        toValue: 0,
+        duration: 200,
+        easing: Easing.in(Easing.back(1.2)),
+        useNativeDriver: true,
+      }),
+      Animated.timing(modalOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowStatusUpdateModal(false);
+      setStatusUpdateInfo(null);
+      // Reset animation values
+      modalScale.setValue(0);
+      modalOpacity.setValue(0);
+      iconRotation.setValue(0);
+    });
   };
 
   const onRefresh = async () => {
@@ -159,6 +383,7 @@ export default function MyRequestsScreen() {
       case 'active_rental': return '#28a745';
       case 'completed': return '#6c757d';
       case 'expired': return '#dc3545';
+      case 'rejected': return '#dc3545';
       default: return '#6c757d';
     }
   };
@@ -172,6 +397,7 @@ export default function MyRequestsScreen() {
       case 'active_rental': return 'Active Rental';
       case 'completed': return 'Completed';
       case 'expired': return 'Expired';
+      case 'rejected': return 'Rejected';
       default: return status.replace('_', ' ').toUpperCase();
     }
   };
@@ -185,6 +411,7 @@ export default function MyRequestsScreen() {
       case 'active_rental': return 'bicycle-outline';
       case 'completed': return 'checkmark-done-outline';
       case 'expired': return 'close-circle-outline';
+      case 'rejected': return 'close-circle-outline';
       default: return 'help-circle-outline';
     }
   };
@@ -502,7 +729,7 @@ export default function MyRequestsScreen() {
     <AuthGuard message="Loading your requests...">
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={handleBackPress}>
           <Ionicons name="arrow-back" size={24} color="#2D3E50" />
         </TouchableOpacity>
         <View style={styles.headerContent}>
@@ -770,6 +997,19 @@ export default function MyRequestsScreen() {
                           </View>
                       </View>
                     )}
+
+                      {/* Rejected Status Card */}
+                      {selectedRepairRequest.status === 'rejected' && selectedRepairRequest.rejection_note && (
+                        <View style={[styles.modalInfoCard, styles.modalRejectionCard]}>
+                          <View style={styles.modalCardHeader}>
+                            <Ionicons name="close-circle-outline" size={18} color="#dc3545" />
+                            <Text style={styles.modalCardTitle}>Request Rejected</Text>
+                          </View>
+                          <View style={styles.modalCardContent}>
+                            <Text style={styles.modalRejectionText}>{selectedRepairRequest.rejection_note}</Text>
+                          </View>
+                        </View>
+                      )}
                     </View>
                   </View>
                 )}
@@ -900,6 +1140,19 @@ export default function MyRequestsScreen() {
                           </View>
                         </View>
                       )}
+
+                      {/* Rejected Status Card */}
+                      {selectedRentalRequest.status === 'rejected' && selectedRentalRequest.rejection_note && (
+                        <View style={[styles.modalInfoCard, styles.modalRejectionCard]}>
+                          <View style={styles.modalCardHeader}>
+                            <Ionicons name="close-circle-outline" size={18} color="#dc3545" />
+                            <Text style={styles.modalCardTitle}>Request Rejected</Text>
+                          </View>
+                          <View style={styles.modalCardContent}>
+                            <Text style={styles.modalRejectionText}>{selectedRentalRequest.rejection_note}</Text>
+                          </View>
+                        </View>
+                      )}
                     </View>
                   </View>
                 )}
@@ -913,6 +1166,103 @@ export default function MyRequestsScreen() {
               </TouchableOpacity>
             </View>
           </View>
+        </Modal>
+      )}
+
+      {showStatusUpdateModal && statusUpdateInfo && (
+        <Animated.View
+          style={[
+            styles.statusUpdateModal,
+            {
+              transform: [{ scale: modalScale }],
+              opacity: modalOpacity,
+            },
+          ]}
+        >
+          <View style={styles.statusUpdateModalContent}>
+            <View style={styles.statusUpdateModalHeader}>
+              <Ionicons
+                name={statusUpdateInfo.icon as any}
+                size={40}
+                color={statusUpdateInfo.color}
+                style={{ transform: [{ rotate: `${iconRotation.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0deg', '360deg'],
+                })}` }] }}
+              />
+              <Text style={styles.statusUpdateModalTitle}>{statusUpdateInfo.title}</Text>
+            </View>
+            <View style={styles.statusUpdateModalBody}>
+              <Text style={styles.statusUpdateModalMessage}>{statusUpdateInfo.message}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.statusUpdateModalButton}
+              onPress={closeStatusUpdateModal}
+            >
+              <Text style={styles.statusUpdateModalButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      )}
+
+      {/* Status Update Notification Modal */}
+      {showStatusUpdateModal && statusUpdateInfo && (
+        <Modal
+          visible={showStatusUpdateModal}
+          transparent={true}
+          animationType="none"
+          onRequestClose={closeStatusUpdateModal}
+          statusBarTranslucent={true}
+        >
+          <Animated.View
+            style={[
+              styles.statusUpdateModal,
+              {
+                opacity: modalOpacity,
+              },
+            ]}
+          >
+            <Animated.View
+              style={[
+                styles.statusUpdateModalContent,
+                {
+                  transform: [{ scale: modalScale }],
+                },
+              ]}
+            >
+              <View style={styles.statusUpdateModalHeader}>
+                <Animated.View
+                  style={{
+                    transform: [{
+                      rotate: iconRotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0deg', '360deg'],
+                      })
+                    }]
+                  }}
+                >
+                  <Ionicons
+                    name={statusUpdateInfo.icon as any}
+                    size={48}
+                    color={statusUpdateInfo.color}
+                  />
+                </Animated.View>
+                <Text style={styles.statusUpdateModalTitle}>{statusUpdateInfo.title}</Text>
+              </View>
+              <View style={styles.statusUpdateModalBody}>
+                <Text style={styles.statusUpdateModalMessage}>{statusUpdateInfo.message}</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.statusUpdateModalButton, { backgroundColor: colors.primary }]}
+                onPress={closeStatusUpdateModal}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.statusUpdateModalButtonText, { color: colors.secondary }]}>
+                  Got it!
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </Animated.View>
         </Modal>
       )}
     </SafeAreaView>
@@ -1493,6 +1843,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
+  modalRejectionCard: {
+    borderColor: '#dc3545',
+    backgroundColor: '#f8d7da',
+  },
+  modalRejectionText: {
+    fontSize: 14,
+    color: '#721c24',
+    lineHeight: 20,
+    textAlign: 'center',
+  },
   modalServiceItem: {
     marginBottom: 12,
   },
@@ -1546,5 +1906,72 @@ const styles = StyleSheet.create({
     backgroundColor: '#dee2e6',
     marginTop: 12,
     marginBottom: 12,
+  },
+  statusUpdateModal: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    zIndex: 1000,
+  },
+  statusUpdateModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    width: '85%',
+    maxWidth: 320,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 209, 30, 0.1)',
+  },
+  statusUpdateModalHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  statusUpdateModalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    marginTop: 16,
+    textAlign: 'center',
+    lineHeight: 28,
+  },
+  statusUpdateModalBody: {
+    marginBottom: 28,
+    width: '100%',
+  },
+  statusUpdateModalMessage: {
+    fontSize: 16,
+    color: '#4A4A4A',
+    textAlign: 'center',
+    lineHeight: 24,
+    fontWeight: '500',
+  },
+  statusUpdateModalButton: {
+    backgroundColor: '#FFD11E',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 14,
+    width: '100%',
+    shadowColor: '#FFD11E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  statusUpdateModalButtonText: {
+    color: '#2D3E50',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 }); 

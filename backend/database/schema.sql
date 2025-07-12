@@ -92,7 +92,8 @@ CREATE TABLE IF NOT EXISTS repair_requests (
     time_slot_id INTEGER NOT NULL,
     total_amount DECIMAL(10,2) NOT NULL,
     payment_method TEXT NOT NULL CHECK (payment_method IN ('online', 'offline')),
-    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'waiting_payment', 'active', 'completed', 'expired')),
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'waiting_payment', 'active', 'completed', 'expired', 'rejected')),
+    rejection_note TEXT,
     expires_at DATETIME NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -137,7 +138,8 @@ CREATE TABLE IF NOT EXISTS rental_requests (
     duration_count INTEGER NOT NULL,
     total_amount DECIMAL(10,2) NOT NULL,
     payment_method TEXT NOT NULL CHECK (payment_method IN ('online', 'offline')),
-    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'waiting_payment', 'arranging_delivery', 'active_rental', 'completed', 'expired')),
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'waiting_payment', 'arranging_delivery', 'active_rental', 'completed', 'expired', 'rejected')),
+    rejection_note TEXT,
     expires_at DATETIME NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -196,6 +198,16 @@ CREATE TABLE IF NOT EXISTS otp_codes (
     expires_at DATETIME NOT NULL,
     is_used BOOLEAN DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Contact Settings table (for admin configuration)
+CREATE TABLE IF NOT EXISTS contact_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL CHECK (type IN ('phone', 'email', 'link')),
+    value TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Payment Transactions table (for mock payments)

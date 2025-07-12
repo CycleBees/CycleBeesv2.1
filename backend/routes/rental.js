@@ -123,7 +123,8 @@ router.get('/admin/requests', authenticateToken, requireAdmin, (req, res) => {
 
 // 2. Update rental request status (Admin)
 router.patch('/admin/requests/:id/status', authenticateToken, requireAdmin, [
-    body('status').isIn(['waiting_payment', 'arranging_delivery', 'active_rental', 'completed', 'expired']).withMessage('Invalid status')
+    body('status').isIn(['pending', 'approved', 'waiting_payment', 'arranging_delivery', 'active_rental', 'completed', 'expired', 'rejected']).withMessage('Invalid status'),
+    body('rejectionNote').optional().isString().withMessage('Rejection note must be a string')
 ], (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -135,33 +136,48 @@ router.patch('/admin/requests/:id/status', authenticateToken, requireAdmin, [
     }
     
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, rejectionNote } = req.body;
     
-    db.run(
-        'UPDATE rental_requests SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [status, id],
-        function(err) {
-            if (err) {
-                console.error('Error updating rental request status:', err);
-                return res.status(500).json({
-                    success: false,
-                    message: 'Failed to update rental request status'
-                });
-            }
-            
-            if (this.changes === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Rental request not found'
-                });
-            }
-            
-            res.json({
-                success: true,
-                message: 'Rental request status updated successfully'
+    // If status is rejected, rejection note is required
+    if (status === 'rejected' && !rejectionNote) {
+        return res.status(400).json({
+            success: false,
+            message: 'Rejection note is required when rejecting a request'
+        });
+    }
+    
+    // Prepare update query based on status
+    let updateQuery, params;
+    
+    if (status === 'rejected') {
+        updateQuery = 'UPDATE rental_requests SET status = ?, rejection_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+        params = [status, rejectionNote, id];
+    } else {
+        updateQuery = 'UPDATE rental_requests SET status = ?, rejection_note = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+        params = [status, id];
+    }
+    
+    db.run(updateQuery, params, function(err) {
+        if (err) {
+            console.error('Error updating rental request status:', err);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to update rental request status'
             });
         }
-    );
+        
+        if (this.changes === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Rental request not found'
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Rental request status updated successfully'
+        });
+    });
 });
 
 // 2.5. Delete rental request (Admin)

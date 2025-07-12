@@ -23,6 +23,7 @@ import AuthGuard from '@/components/AuthGuard';
 import PageTransition from '@/components/PageTransition';
 import StepIndicator from '@/components/StepIndicator';
 
+
 interface RepairService {
   id: number;
   name: string;
@@ -55,6 +56,15 @@ const STEPS = [
 
 export default function BookRepairScreen() {
   const router = useRouter();
+
+  const handleBackPress = () => {
+    // Check if we can go back, if not navigate to home
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/home');
+    }
+  };
   const [step, setStep] = useState<'services' | 'details' | 'summary'>('services');
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<User | null>(null);
@@ -88,6 +98,9 @@ export default function BookRepairScreen() {
   const [paymentMethod, setPaymentMethod] = useState<'online' | 'offline'>('offline');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimeSlotPicker, setShowTimeSlotPicker] = useState(false);
+  
+  // Confirmation modal state
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
 
   const [errors, setErrors] = useState<{[key: string]: string}>({});
 
@@ -387,6 +400,12 @@ export default function BookRepairScreen() {
       return;
     }
 
+    // Show confirmation modal instead of submitting directly
+    setShowConfirmationModal(true);
+  };
+
+  const confirmSubmit = async () => {
+    setShowConfirmationModal(false);
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
@@ -891,7 +910,7 @@ export default function BookRepairScreen() {
     <SafeAreaView style={styles.container}>
         {/* Modern Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                  <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#2D3E50" />
         </TouchableOpacity>
           <View style={styles.headerContent}>
@@ -1031,6 +1050,109 @@ export default function BookRepairScreen() {
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Confirmation Modal */}
+      <Modal
+        visible={showConfirmationModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowConfirmationModal(false)}
+      >
+        <View style={styles.confirmationModalOverlay}>
+          <View style={styles.confirmationModalContent}>
+            {/* Header with Icon and Title */}
+            <View style={styles.confirmationModalHeader}>
+              <View style={styles.confirmationIconContainer}>
+                <Ionicons name="construct" size={24} color="#FFD11E" />
+              </View>
+              <Text style={styles.confirmationModalTitle}>Confirm Repair</Text>
+            </View>
+            
+            {/* Body with Details */}
+            <View style={styles.confirmationModalBody}>
+              <View style={styles.confirmationModalDetails}>
+                <View style={styles.confirmationDetailCard}>
+                  <View style={styles.confirmationDetailRow}>
+                    <View style={styles.confirmationDetailLeft}>
+                      <Ionicons name="construct-outline" size={16} color="#FFD11E" />
+                      <Text style={styles.confirmationDetailLabel}>Services</Text>
+                    </View>
+                    <Text style={styles.confirmationDetailValue}>
+                      {selectedServices.length} service(s)
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.confirmationDetailCard}>
+                  <View style={styles.confirmationDetailRow}>
+                    <View style={styles.confirmationDetailLeft}>
+                      <Ionicons name="calendar-outline" size={16} color="#FFD11E" />
+                      <Text style={styles.confirmationDetailLabel}>Date</Text>
+                    </View>
+                    <Text style={styles.confirmationDetailValue}>
+                      {formData.preferred_date.toLocaleDateString()}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.confirmationDetailCard}>
+                  <View style={styles.confirmationDetailRow}>
+                    <View style={styles.confirmationDetailLeft}>
+                      <Ionicons name="time-outline" size={16} color="#FFD11E" />
+                      <Text style={styles.confirmationDetailLabel}>Time</Text>
+                    </View>
+                    <Text style={styles.confirmationDetailValue}>
+                      {getSelectedTimeSlotText()}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.confirmationDetailCard}>
+                  <View style={styles.confirmationDetailRow}>
+                    <View style={styles.confirmationDetailLeft}>
+                      <Ionicons name="location-outline" size={16} color="#FFD11E" />
+                      <Text style={styles.confirmationDetailLabel}>Address</Text>
+                    </View>
+                    <Text style={styles.confirmationDetailValue} numberOfLines={3}>
+                      {formData.address}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.confirmationTotalCard}>
+                  <View style={styles.confirmationDetailRow}>
+                    <View style={styles.confirmationDetailLeft}>
+                      <Ionicons name="pricetag-outline" size={16} color="#28a745" />
+                      <Text style={styles.confirmationTotalLabel}>Total</Text>
+                    </View>
+                    <Text style={styles.confirmationTotalValue}>₹{calculateTotalWithDiscount()}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+            
+            {/* Footer with Action Buttons */}
+            <View style={styles.confirmationModalFooter}>
+              <TouchableOpacity
+                style={styles.confirmationModalCancelButton}
+                onPress={() => setShowConfirmationModal(false)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="close-outline" size={16} color="#6c757d" />
+                <Text style={styles.confirmationModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmationModalConfirmButton}
+                onPress={confirmSubmit}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="checkmark-outline" size={16} color="#fff" />
+                <Text style={styles.confirmationModalConfirmText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1890,5 +2012,163 @@ const styles = StyleSheet.create({
   inputError: {
     borderColor: '#dc3545',
     borderWidth: 2,
+  },
+  // Confirmation Modal Styles
+  confirmationModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  confirmationModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 0,
+    width: '100%',
+    maxWidth: 320,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+    overflow: 'hidden',
+  },
+  confirmationModalHeader: {
+    alignItems: 'center',
+    padding: 20,
+    paddingBottom: 16,
+    backgroundColor: '#FFF5CC',
+    borderBottomWidth: 1,
+    borderBottomColor: '#FFE066',
+  },
+  confirmationIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFD11E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    shadowColor: '#FFD11E',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  confirmationModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2D3E50',
+    textAlign: 'center',
+  },
+  confirmationModalSubtitle: {
+    fontSize: 14,
+    color: '#6c757d',
+    textAlign: 'center',
+  },
+  confirmationModalBody: {
+    padding: 20,
+    paddingBottom: 16,
+  },
+  confirmationModalDetails: {
+    gap: 8,
+  },
+  confirmationDetailCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  confirmationDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  confirmationDetailLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  confirmationDetailLabel: {
+    fontSize: 13,
+    color: '#6c757d',
+    fontWeight: '500',
+  },
+  confirmationDetailValue: {
+    fontSize: 13,
+    color: '#2D3E50',
+    fontWeight: '600',
+    textAlign: 'right',
+    flex: 1,
+    marginLeft: 6,
+    lineHeight: 18,
+  },
+  confirmationTotalCard: {
+    backgroundColor: '#d4edda',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#c3e6cb',
+  },
+  confirmationTotalLabel: {
+    fontSize: 13,
+    color: '#155724',
+    fontWeight: '600',
+  },
+  confirmationTotalValue: {
+    fontSize: 14,
+    color: '#155724',
+    fontWeight: 'bold',
+    textAlign: 'right',
+    flex: 1,
+    marginLeft: 6,
+  },
+  confirmationModalFooter: {
+    flexDirection: 'row',
+    padding: 16,
+    paddingTop: 0,
+    gap: 10,
+  },
+  confirmationModalCancelButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+  },
+  confirmationModalCancelText: {
+    color: '#6c757d',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  confirmationModalConfirmButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: '#28a745',
+    shadowColor: '#28a745',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  confirmationModalConfirmText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 }); 

@@ -6,6 +6,7 @@ import RepairManagement from './components/RepairManagement';
 import RentalManagement from './components/RentalManagement';
 import CouponManagement from './components/CouponManagement';
 import PromotionalCards from './components/PromotionalCards';
+import ContactSettings from './components/ContactSettings';
 import UserManagement from './components/UserManagement';
 
 function App() {
@@ -67,6 +68,8 @@ function App() {
         return <CouponManagement />;
       case 'promotional':
         return <PromotionalCards />;
+      case 'contact':
+        return <ContactSettings />;
       case 'users':
         return <UserManagement />;
       default:

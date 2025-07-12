@@ -24,6 +24,7 @@ import SplashAnimation from '@/components/SplashAnimation';
 import AuthGuard from '@/components/AuthGuard';
 import { Colors } from '@/constants/Colors';
 
+
 interface PromotionalCard {
   id: number;
   title: string;
@@ -44,12 +45,19 @@ interface User {
   profile_photo: string;
 }
 
+interface ContactSettings {
+  type: 'phone' | 'email' | 'link';
+  value: string;
+  is_active: boolean;
+}
+
 const { width, height } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [promotionalCards, setPromotionalCards] = useState<PromotionalCard[]>([]);
+  const [contactSettings, setContactSettings] = useState<ContactSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -64,6 +72,7 @@ export default function HomeScreen() {
   useEffect(() => {
     fetchUserProfile();
     fetchPromotionalCards();
+    fetchContactSettings();
   }, []);
 
   // Auto-scroll effect
@@ -132,6 +141,21 @@ export default function HomeScreen() {
     }
   };
 
+  const fetchContactSettings = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/contact/settings');
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data) {
+          setContactSettings(data.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching contact settings:', error);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
@@ -172,6 +196,46 @@ export default function HomeScreen() {
 
   const cancelLogout = () => {
     setShowLogoutModal(false);
+  };
+
+  const handleContactPress = () => {
+    if (!contactSettings || !contactSettings.is_active) {
+      Alert.alert('Contact', 'Contact support is not configured at the moment. Please try again later.');
+      return;
+    }
+
+    switch (contactSettings.type) {
+      case 'phone':
+        Linking.openURL(`tel:${contactSettings.value}`);
+        break;
+      case 'email':
+        Linking.openURL(`mailto:${contactSettings.value}`);
+        break;
+      case 'link':
+        Linking.openURL(contactSettings.value);
+        break;
+      default:
+        Alert.alert('Contact', 'Contact method not supported.');
+    }
+  };
+
+  const getContactIcon = () => {
+    if (!contactSettings) return 'call';
+    
+    switch (contactSettings.type) {
+      case 'phone':
+        return 'call';
+      case 'email':
+        return 'mail';
+      case 'link':
+        return 'link';
+      default:
+        return 'call';
+    }
+  };
+
+  const getContactText = () => {
+    return 'Contact Us';
   };
 
   // Carousel handlers
@@ -406,17 +470,18 @@ export default function HomeScreen() {
           {/* Modern Contact Section */}
           <View style={styles.contactSection}>
             <View style={styles.contactCard}>
-              <View style={styles.contactIcon}>
-                <Ionicons name="call" size={28} color="#FFD11E" />
-              </View>
               <View style={styles.contactContent}>
                 <Text style={styles.contactTitle}>Need Help?</Text>
                 <Text style={styles.contactDescription}>
                   Contact our support team for assistance
                 </Text>
               </View>
-              <TouchableOpacity style={styles.contactButton}>
-                <Text style={styles.contactButtonText}>Contact</Text>
+              <TouchableOpacity 
+                style={styles.contactButton}
+                onPress={handleContactPress}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.contactButtonText}>{getContactText()}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -770,16 +835,35 @@ const styles = StyleSheet.create({
   },
   contactButton: {
     backgroundColor: '#FFD11E',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 120,
     borderWidth: 2,
     borderColor: '#FFD11E',
+    ...Platform.select({
+      web: {
+        boxShadow: '0 4px 12px rgba(255, 209, 30, 0.3)',
+      },
+      default: {
+        shadowColor: '#FFD11E',
+        shadowOffset: {
+          width: 0,
+          height: 4,
+        },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+        elevation: 6,
+      },
+    }),
   },
   contactButtonText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 'bold',
     color: '#2D3E50',
+    letterSpacing: 0.3,
   },
   modalOverlay: {
     flex: 1,

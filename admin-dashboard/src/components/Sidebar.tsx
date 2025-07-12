@@ -38,6 +38,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activeSection, onSectionChange }) => 
       description: 'Home Page Content'
     },
     { 
+      id: 'contact', 
+      label: 'Contact Settings', 
+      icon: '📞',
+      description: 'Configure Contact Button'
+    },
+    { 
       id: 'users', 
       label: 'User Management', 
       icon: '👥',

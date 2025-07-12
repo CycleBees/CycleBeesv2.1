@@ -19,14 +19,24 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="home" options={{ headerShown: false }} />
-        <Stack.Screen name="book-repair" options={{ headerShown: false }} />
-        <Stack.Screen name="book-rental" options={{ headerShown: false }} />
-        <Stack.Screen name="my-requests" options={{ headerShown: false }} />
-        <Stack.Screen name="profile" options={{ headerShown: false }} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: 400,
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+          presentation: 'card',
+          animationTypeForReplace: 'push',
+        }}
+      >
+        <Stack.Screen name="login" />
+        <Stack.Screen name="index" />
+        <Stack.Screen name="home" />
+        <Stack.Screen name="book-repair" />
+        <Stack.Screen name="book-rental" />
+        <Stack.Screen name="my-requests" />
+        <Stack.Screen name="profile" />
         <Stack.Screen name="+not-found" />
       </Stack>
       <StatusBar style="auto" />

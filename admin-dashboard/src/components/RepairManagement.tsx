@@ -23,12 +23,12 @@ interface RepairRequest {
   status: string;
   created_at: string;
   preferred_date: string;
-  preferred_time_slot: string;
   notes: string;
   payment_method: string;
   alternate_number?: string;
   email?: string;
   address?: string;
+  rejection_note?: string;
   // Additional fields for better admin view
   contact_number?: string;
   start_time?: string;
@@ -94,8 +94,10 @@ const RepairManagement: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showDeleteServiceModal, setShowDeleteServiceModal] = useState(false);
   const [showDeleteTimeSlotModal, setShowDeleteTimeSlotModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectionNote, setRejectionNote] = useState('');
   const [pendingAction, setPendingAction] = useState<{
-    type: 'status' | 'delete' | 'deleteService' | 'deleteTimeSlot';
+    type: 'status' | 'delete' | 'deleteService' | 'deleteTimeSlot' | 'reject';
     requestId?: number;
     serviceId?: number;
     timeSlotId?: number;
@@ -205,17 +207,23 @@ const RepairManagement: React.FC = () => {
     }
   };
 
-  const updateRequestStatus = async (requestId: number, status: string) => {
+  const updateRequestStatus = async (requestId: number, status: string, rejectionNote?: string) => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
+      
+      const requestBody: any = { status };
+      if (status === 'rejected' && rejectionNote) {
+        requestBody.rejectionNote = rejectionNote;
+      }
+      
       const response = await fetch(`http://localhost:3000/api/repair/admin/requests/${requestId}/status`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ status })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
@@ -424,6 +432,12 @@ const RepairManagement: React.FC = () => {
     setShowDeleteTimeSlotModal(true);
   };
 
+  const handleRejectRequest = (requestId: number) => {
+    setPendingAction({ type: 'reject', requestId });
+    setRejectionNote('');
+    setShowRejectModal(true);
+  };
+
   const confirmAction = async () => {
     if (!pendingAction) return;
 
@@ -435,13 +449,17 @@ const RepairManagement: React.FC = () => {
       await deleteService(pendingAction.serviceId);
     } else if (pendingAction.type === 'deleteTimeSlot' && pendingAction.timeSlotId) {
       await deleteTimeSlot(pendingAction.timeSlotId);
+    } else if (pendingAction.type === 'reject' && pendingAction.requestId) {
+      await updateRequestStatus(pendingAction.requestId, 'rejected', rejectionNote);
     }
 
     setShowStatusModal(false);
     setShowDeleteModal(false);
     setShowDeleteServiceModal(false);
     setShowDeleteTimeSlotModal(false);
+    setShowRejectModal(false);
     setPendingAction(null);
+    setRejectionNote('');
   };
 
   const clearServiceForm = () => {
@@ -470,6 +488,7 @@ const RepairManagement: React.FC = () => {
       case 'active': return '#28a745';
       case 'completed': return '#6c757d';
       case 'expired': return '#dc3545';
+      case 'rejected': return '#dc3545';
       default: return '#6c757d';
     }
   };
@@ -482,6 +501,7 @@ const RepairManagement: React.FC = () => {
       case 'active': return 'Active';
       case 'completed': return 'Completed';
       case 'expired': return 'Expired';
+      case 'rejected': return 'Rejected';
       default: return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
     }
   };
@@ -601,6 +621,12 @@ const RepairManagement: React.FC = () => {
               >
                 Expired ({getStatusCount('expired')})
               </button>
+              <button 
+                className={`status-tab ${activeStatusFilter === 'rejected' ? 'active' : ''}`}
+                onClick={() => setActiveStatusFilter('rejected')}
+              >
+                Rejected ({getStatusCount('rejected')})
+              </button>
                     </div>
             
             {getFilteredRequests().length === 0 ? (
@@ -658,7 +684,12 @@ const RepairManagement: React.FC = () => {
                   </div>
                       <div className="summary-row">
                         <span className="summary-label">Time:</span>
-                        <span className="summary-value">{request.preferred_time_slot}</span>
+                        <span className="summary-value">
+                          {request.start_time && request.end_time 
+                            ? `${request.start_time} - ${request.end_time}`
+                            : 'Time slot not available'
+                          }
+                        </span>
                       </div>
                       <div className="summary-row">
                         <span className="summary-label">Payment:</span>
@@ -681,13 +712,21 @@ const RepairManagement: React.FC = () => {
                     </button>
                       
                                             {request.status.toLowerCase() === 'pending' && (
-                    <button 
-                          onClick={() => handleStatusChange(request.id, 'approved')}
-                      className="action-btn approve"
-                    >
-                          Approve
-                    </button>
-              )}
+                        <>
+                          <button 
+                            onClick={() => handleStatusChange(request.id, 'approved')}
+                            className="action-btn approve"
+                          >
+                            Approve
+                          </button>
+                          <button 
+                            onClick={() => handleRejectRequest(request.id)}
+                            className="action-btn reject"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
               
                       {request.status.toLowerCase() === 'approved' && (
                 <button 
@@ -1095,7 +1134,12 @@ const RepairManagement: React.FC = () => {
                 </div>
                 <div className="detail-group">
                   <label>Time Slot:</label>
-                  <p>{selectedRequest.preferred_time_slot}</p>
+                  <p>
+                    {selectedRequest.start_time && selectedRequest.end_time 
+                      ? `${selectedRequest.start_time} - ${selectedRequest.end_time}`
+                      : 'Time slot not available'
+                    }
+                  </p>
                 </div>
                 <div className="detail-group">
                   <label>Total Amount:</label>
@@ -1142,6 +1186,12 @@ const RepairManagement: React.FC = () => {
                   <label>Created:</label>
                   <p>{new Date(selectedRequest.created_at).toLocaleString()}</p>
                 </div>
+                {selectedRequest.rejection_note && (
+                  <div className="detail-group full-width">
+                    <label>Rejection Note:</label>
+                    <p className="rejection-note">{selectedRequest.rejection_note}</p>
+                  </div>
+                )}
               </div>
 
               {/* Services Section */}
@@ -1247,6 +1297,48 @@ const RepairManagement: React.FC = () => {
                 </button>
               </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection Modal */}
+      {showRejectModal && (
+        <div className="modal-overlay" onClick={() => setShowRejectModal(false)}>
+          <div className="modal-content confirmation-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Reject Repair Request</h3>
+              <button className="close-btn" onClick={() => setShowRejectModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="warning-icon">⚠️</div>
+              <p>Are you sure you want to reject this repair request?</p>
+              <p><strong>This action cannot be undone.</strong></p>
+              
+              <div className="form-group">
+                <label htmlFor="rejectionNote">Rejection Note (Required):</label>
+                <textarea
+                  id="rejectionNote"
+                  value={rejectionNote}
+                  onChange={(e) => setRejectionNote(e.target.value)}
+                  placeholder="Please provide a reason for rejection..."
+                  rows={4}
+                  required
+                  className="rejection-note-input"
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="cancel-btn" onClick={() => setShowRejectModal(false)}>
+                Cancel
+              </button>
+              <button 
+                className="reject-confirm-btn" 
+                onClick={confirmAction}
+                disabled={!rejectionNote.trim()}
+              >
+                Reject Request
+              </button>
             </div>
           </div>
         </div>

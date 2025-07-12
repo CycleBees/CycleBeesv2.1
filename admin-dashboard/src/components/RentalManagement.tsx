@@ -20,6 +20,7 @@ interface RentalRequest {
   special_instructions?: string;
   alternate_number?: string;
   email?: string;
+  rejection_note?: string;
   // Coupon information
   coupon_code?: string;
   coupon_discount_type?: string;
@@ -74,8 +75,10 @@ const RentalManagement: React.FC = () => {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showDeleteBicycleModal, setShowDeleteBicycleModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectionNote, setRejectionNote] = useState('');
   const [pendingAction, setPendingAction] = useState<{
-    type: 'status' | 'delete' | 'deleteBicycle';
+    type: 'status' | 'delete' | 'deleteBicycle' | 'reject';
     requestId?: number;
     bicycleId?: number;
     newStatus?: string;
@@ -143,17 +146,23 @@ const RentalManagement: React.FC = () => {
     }
   };
 
-  const updateRequestStatus = async (requestId: number, status: string) => {
+  const updateRequestStatus = async (requestId: number, status: string, rejectionNote?: string) => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
+      
+      const requestBody: any = { status };
+      if (status === 'rejected' && rejectionNote) {
+        requestBody.rejectionNote = rejectionNote;
+      }
+      
       const response = await fetch(`http://localhost:3000/api/rental/admin/requests/${requestId}/status`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ status })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
@@ -308,6 +317,12 @@ const RentalManagement: React.FC = () => {
     setShowDeleteBicycleModal(true);
   };
 
+  const handleRejectRequest = (requestId: number) => {
+    setPendingAction({ type: 'reject', requestId });
+    setRejectionNote('');
+    setShowRejectModal(true);
+  };
+
   const confirmAction = async () => {
     if (!pendingAction) return;
 
@@ -317,12 +332,16 @@ const RentalManagement: React.FC = () => {
       await deleteRequest(pendingAction.requestId);
     } else if (pendingAction.type === 'deleteBicycle' && pendingAction.bicycleId) {
       await deleteBicycle(pendingAction.bicycleId);
+    } else if (pendingAction.type === 'reject' && pendingAction.requestId) {
+      await updateRequestStatus(pendingAction.requestId, 'rejected', rejectionNote);
     }
 
     setShowStatusModal(false);
     setShowDeleteModal(false);
     setShowDeleteBicycleModal(false);
+    setShowRejectModal(false);
     setPendingAction(null);
+    setRejectionNote('');
   };
 
   const getStatusColor = (status: string) => {
@@ -334,6 +353,7 @@ const RentalManagement: React.FC = () => {
       case 'active_rental': return '#28a745';
       case 'completed': return '#6c757d';
       case 'expired': return '#dc3545';
+      case 'rejected': return '#dc3545';
       default: return '#6c757d';
     }
   };
@@ -347,6 +367,7 @@ const RentalManagement: React.FC = () => {
       case 'active_rental': return 'Active Rental';
       case 'completed': return 'Completed';
       case 'expired': return 'Expired';
+      case 'rejected': return 'Rejected';
       default: return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
     }
   };
@@ -527,6 +548,12 @@ const RentalManagement: React.FC = () => {
               >
                 Expired ({getStatusCount('expired')})
               </button>
+              <button 
+                className={`status-tab ${activeStatusFilter === 'rejected' ? 'active' : ''}`}
+                onClick={() => setActiveStatusFilter('rejected')}
+              >
+                Rejected ({getStatusCount('rejected')})
+              </button>
             </div>
             
             {getFilteredRequests().length === 0 ? (
@@ -599,12 +626,20 @@ const RentalManagement: React.FC = () => {
                     </button>
                     
                       {request.status.toLowerCase() === 'pending' && (
-                        <button 
-                          onClick={() => handleStatusChange(request.id, 'approved')}
-                          className="action-btn approve"
-                        >
-                          Approve
-                        </button>
+                        <>
+                          <button 
+                            onClick={() => handleStatusChange(request.id, 'approved')}
+                            className="action-btn approve"
+                          >
+                            Approve
+                          </button>
+                          <button 
+                            onClick={() => handleRejectRequest(request.id)}
+                            className="action-btn reject"
+                          >
+                            Reject
+                          </button>
+                        </>
                       )}
                       
                       {request.status.toLowerCase() === 'approved' && (
@@ -1054,7 +1089,55 @@ const RentalManagement: React.FC = () => {
                   <label>Created:</label>
                   <p>{new Date(selectedRequest.created_at).toLocaleString()}</p>
                 </div>
+                {selectedRequest.rejection_note && (
+                  <div className="detail-group full-width">
+                    <label>Rejection Note:</label>
+                    <p className="rejection-note">{selectedRequest.rejection_note}</p>
+                  </div>
+                )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection Modal */}
+      {showRejectModal && (
+        <div className="modal-overlay" onClick={() => setShowRejectModal(false)}>
+          <div className="modal-content confirmation-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Reject Rental Request</h3>
+              <button className="close-btn" onClick={() => setShowRejectModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="warning-icon">⚠️</div>
+              <p>Are you sure you want to reject this rental request?</p>
+              <p><strong>This action cannot be undone.</strong></p>
+              
+              <div className="form-group">
+                <label htmlFor="rejectionNote">Rejection Note (Required):</label>
+                <textarea
+                  id="rejectionNote"
+                  value={rejectionNote}
+                  onChange={(e) => setRejectionNote(e.target.value)}
+                  placeholder="Please provide a reason for rejection..."
+                  rows={4}
+                  required
+                  className="rejection-note-input"
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="cancel-btn" onClick={() => setShowRejectModal(false)}>
+                Cancel
+              </button>
+              <button 
+                className="reject-confirm-btn" 
+                onClick={confirmAction}
+                disabled={!rejectionNote.trim()}
+              >
+                Reject Request
+              </button>
             </div>
           </div>
         </div>
