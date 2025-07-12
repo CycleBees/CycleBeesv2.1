@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import AuthGuard from '@/components/AuthGuard';
+import { API_BASE_URL } from '@/config/api';
 
 
 interface User {
@@ -72,7 +73,7 @@ export default function ProfileScreen() {
         return;
       }
 
-      const response = await fetch('http://localhost:3000/api/auth/profile', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/profile`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -145,7 +146,7 @@ export default function ProfileScreen() {
         name: 'profile_photo.jpg',
       } as any);
 
-      const response = await fetch('http://localhost:3000/api/auth/profile/photo', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/profile/photo`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -178,7 +179,7 @@ export default function ProfileScreen() {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('userToken');
-      const response = await fetch('http://localhost:3000/api/auth/profile', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/profile`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -319,7 +320,7 @@ export default function ProfileScreen() {
             <View style={styles.profileImageContainer}>
                           {user.profilePhoto ? (
               <Image
-                source={{ uri: `http://localhost:3000/${user.profilePhoto}` }}
+                source={{ uri: `${API_BASE_URL}/${user.profilePhoto}` }}
                 style={styles.profileImage}
               />
             ) : (

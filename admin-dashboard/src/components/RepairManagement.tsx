@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 
 interface RepairRequest {
   id: number;
@@ -70,7 +71,7 @@ const RepairManagement: React.FC = () => {
   const [selectedRequest, setSelectedRequest] = useState<RepairRequest | null>(null);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [showMediaModal, setShowMediaModal] = useState(false);
-  const [selectedMedia, setSelectedMedia] = useState<{files: any[], currentIndex: number} | null>(null);
+  const [selectedMedia, setSelectedMedia] = useState<{files: any[], currentIndex: number, type?: string} | null>(null);
   
   // Service management states
   const [showServiceForm, setShowServiceForm] = useState(false);
@@ -123,7 +124,7 @@ const RepairManagement: React.FC = () => {
       setLoading(true);
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/repair/admin/requests', {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/requests`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -149,7 +150,7 @@ const RepairManagement: React.FC = () => {
       setLoading(true);
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/repair/admin/services', {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/services`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -172,7 +173,7 @@ const RepairManagement: React.FC = () => {
   const fetchTimeSlots = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/repair/admin/time-slots', {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/time-slots`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -191,7 +192,7 @@ const RepairManagement: React.FC = () => {
   const fetchMechanicCharge = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/repair/admin/mechanic-charge', {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/mechanic-charge`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -217,7 +218,7 @@ const RepairManagement: React.FC = () => {
         requestBody.rejectionNote = rejectionNote;
       }
       
-      const response = await fetch(`http://localhost:3000/api/repair/admin/requests/${requestId}/status`, {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/requests/${requestId}/status`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -241,7 +242,7 @@ const RepairManagement: React.FC = () => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/repair/admin/requests/${requestId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/requests/${requestId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -264,7 +265,7 @@ const RepairManagement: React.FC = () => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/repair/admin/services', {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/services`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -291,7 +292,7 @@ const RepairManagement: React.FC = () => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/repair/admin/services/${serviceId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/services/${serviceId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -316,7 +317,7 @@ const RepairManagement: React.FC = () => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/repair/admin/services/${serviceId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/services/${serviceId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -339,7 +340,7 @@ const RepairManagement: React.FC = () => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/repair/admin/mechanic-charge', {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/mechanic-charge`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -362,7 +363,7 @@ const RepairManagement: React.FC = () => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/repair/admin/time-slots', {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/time-slots`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -387,7 +388,7 @@ const RepairManagement: React.FC = () => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/repair/admin/time-slots/${timeSlotId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/repair/admin/time-slots/${timeSlotId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -1218,30 +1219,93 @@ const RepairManagement: React.FC = () => {
               {/* Files Section */}
               {selectedRequest.files.length > 0 && (
                 <div className="files-section">
-                  <h4>Attached Files ({selectedRequest.files.length})</h4>
-                  <div className="files-grid">
-                    {selectedRequest.files.map((file, index) => (
-                      <div key={file.id} className="file-item">
-                        <button 
-                          onClick={() => {
-                            setSelectedMedia({ files: selectedRequest.files, currentIndex: index });
-                            setShowMediaModal(true);
-                          }}
-                          className="file-preview"
-                        >
-                          {file.file_type.startsWith('image/') ? (
-                      <img 
-                              src={`http://localhost:3000/${file.file_url}`} 
-                              alt={`File ${index + 1}`}
-                              className="file-image"
-                      />
-                    ) : (
-                            <div className="file-icon">📄</div>
-                    )}
-                        </button>
+                  <h4>Attached Media ({selectedRequest.files.length})</h4>
+                  
+                  {/* File Type Summary */}
+                  <div className="file-summary">
+                    <span className="file-count">
+                      📷 {selectedRequest.files.filter(f => f.file_type === 'image').length} photos
+                    </span>
+                    <span className="file-count">
+                      🎥 {selectedRequest.files.filter(f => f.file_type === 'video').length} videos
+                    </span>
                   </div>
-                ))}
-              </div>
+
+                  {/* Images Grid */}
+                  {selectedRequest.files.filter(f => f.file_type === 'image').length > 0 && (
+                    <div className="images-section">
+                      <h5>Photos</h5>
+                      <div className="images-grid">
+                        {selectedRequest.files
+                          .filter(f => f.file_type === 'image')
+                          .map((file, index) => (
+                            <div key={file.id} className="image-item">
+                              <img 
+                                src={`${API_BASE_URL}${file.file_url}`} 
+                                alt={`Photo ${index + 1}`}
+                                className="request-image"
+                                onClick={() => {
+                                  const imageFiles = selectedRequest.files.filter(f => f.file_type === 'image');
+                                  const imageIndex = imageFiles.findIndex(f => f.id === file.id);
+                                  setSelectedMedia({ 
+                                    files: imageFiles, 
+                                    currentIndex: imageIndex,
+                                    type: 'images'
+                                  });
+                                  setShowMediaModal(true);
+                                }}
+                              />
+                              <div className="image-overlay">
+                                <span className="image-number">Photo {index + 1}</span>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Videos Section */}
+                  {selectedRequest.files.filter(f => f.file_type === 'video').length > 0 && (
+                    <div className="videos-section">
+                      <h5>Videos</h5>
+                      <div className="videos-grid">
+                        {selectedRequest.files
+                          .filter(f => f.file_type === 'video')
+                          .map((file, index) => (
+                            <div key={file.id} className="video-item">
+                              <div className="video-preview">
+                                <video 
+                                  src={`${API_BASE_URL}${file.file_url}`}
+                                  className="request-video"
+                                  controls
+                                  preload="metadata"
+                                >
+                                  Your browser does not support the video tag.
+                                </video>
+                                <div className="video-overlay">
+                                  <span className="video-number">Video {index + 1}</span>
+                                  <button 
+                                    className="play-button"
+                                    onClick={() => {
+                                      const videoFiles = selectedRequest.files.filter(f => f.file_type === 'video');
+                                      const videoIndex = videoFiles.findIndex(f => f.id === file.id);
+                                      setSelectedMedia({ 
+                                        files: videoFiles, 
+                                        currentIndex: videoIndex,
+                                        type: 'videos'
+                                      });
+                                      setShowMediaModal(true);
+                                    }}
+                                  >
+                                    ▶️ Fullscreen
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1259,16 +1323,33 @@ const RepairManagement: React.FC = () => {
             </div>
             <div className="modal-body">
               <div className="media-viewer">
-                {selectedMedia.files[selectedMedia.currentIndex]?.file_type.startsWith('image/') ? (
+                {selectedMedia.files[selectedMedia.currentIndex]?.file_type === 'image' ? (
                   <img 
-                    src={`http://localhost:3000/${selectedMedia.files[selectedMedia.currentIndex].file_url}`}
+                    src={`${API_BASE_URL}${selectedMedia.files[selectedMedia.currentIndex].file_url}`}
                     alt={`Media ${selectedMedia.currentIndex + 1}`}
                     className="media-image"
                   />
                 ) : (
-                  <div className="media-placeholder">
-                    <div className="file-icon-large">📄</div>
-                    <p>File: {selectedMedia.files[selectedMedia.currentIndex]?.file_url.split('/').pop()}</p>
+                  <div className="video-player">
+                    <video 
+                      src={`${API_BASE_URL}${selectedMedia.files[selectedMedia.currentIndex].file_url}`}
+                      controls
+                      autoPlay
+                      className="media-video"
+                    >
+                      Your browser does not support the video tag.
+                    </video>
+                    <div className="video-info">
+                      <p>Video: {selectedMedia.files[selectedMedia.currentIndex]?.file_url.split('/').pop()}</p>
+                      <a 
+                        href={`${API_BASE_URL}${selectedMedia.files[selectedMedia.currentIndex]?.file_url}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="video-download-link"
+                      >
+                        Download Video
+                      </a>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1347,4 +1428,236 @@ const RepairManagement: React.FC = () => {
   );
 };
 
-export default RepairManagement; 
+export default RepairManagement;
+
+// Enhanced styles for media display
+const styles = `
+  /* File Summary */
+  .file-summary {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+  }
+  
+  .file-count {
+    font-size: 14px;
+    color: #6c757d;
+    font-weight: 500;
+  }
+  
+  /* Images Section */
+  .images-section {
+    margin-bottom: 30px;
+  }
+  
+  .images-section h5 {
+    margin-bottom: 15px;
+    color: #495057;
+    font-size: 16px;
+  }
+  
+  .images-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+  }
+  
+  .image-item {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+    cursor: pointer;
+  }
+  
+  .image-item:hover {
+    transform: scale(1.02);
+  }
+  
+  .request-image {
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+    display: block;
+  }
+  
+  .image-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+    padding: 10px;
+    color: white;
+  }
+  
+  .image-number {
+    font-size: 12px;
+    font-weight: 500;
+  }
+  
+  /* Videos Section */
+  .videos-section {
+    margin-bottom: 30px;
+  }
+  
+  .videos-section h5 {
+    margin-bottom: 15px;
+    color: #495057;
+    font-size: 16px;
+  }
+  
+  .videos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+  }
+  
+  .video-item {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  
+  .video-preview {
+    position: relative;
+  }
+  
+  .request-video {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    display: block;
+  }
+  
+  .video-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .video-number {
+    color: white;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  
+  .play-button {
+    background: rgba(255,255,255,0.9);
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .play-button:hover {
+    background: white;
+  }
+  
+  /* Media Modal Enhancements */
+  .media-modal {
+    max-width: 90vw;
+    max-height: 90vh;
+  }
+  
+  .media-viewer {
+    text-align: center;
+  }
+  
+  .media-image {
+    max-width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+    border-radius: 8px;
+  }
+  
+  .video-player {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+  }
+  
+  .media-video {
+    max-width: 100%;
+    max-height: 60vh;
+    border-radius: 8px;
+  }
+  
+  .video-info {
+    text-align: center;
+  }
+  
+  .video-info p {
+    margin-bottom: 10px;
+    color: #6c757d;
+  }
+  
+  .video-download-link {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 8px 16px;
+    background-color: #007bff;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: background-color 0.3s;
+  }
+  
+  .video-download-link:hover {
+    background-color: #0056b3;
+    text-decoration: none;
+    color: white;
+  }
+  
+  /* Media Navigation */
+  .media-navigation {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+  }
+  
+  .nav-btn {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .nav-btn:hover {
+    background: #0056b3;
+  }
+  
+  .media-counter {
+    font-weight: 500;
+    color: #495057;
+  }
+`;
+
+// Inject styles
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = styles;
+  document.head.appendChild(styleSheet);
+} 

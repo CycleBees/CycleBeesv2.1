@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 import './PromotionalCards.css';
 
 interface PromotionalCard {
@@ -39,7 +40,7 @@ export default function PromotionalCards() {
       setLoading(true);
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/promotional/admin', {
+      const response = await fetch(`${API_BASE_URL}/api/promotional/admin`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -137,8 +138,8 @@ export default function PromotionalCards() {
       }
 
       const url = editingCard 
-        ? `http://localhost:3000/api/promotional/admin/${editingCard.id}`
-        : 'http://localhost:3000/api/promotional/admin';
+        ? `${API_BASE_URL}/api/promotional/admin/${editingCard.id}`
+        : `${API_BASE_URL}/api/promotional/admin`;
       
       const method = editingCard ? 'PUT' : 'POST';
 
@@ -191,7 +192,7 @@ export default function PromotionalCards() {
       setLoading(true);
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/promotional/admin/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/promotional/admin/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -334,7 +335,7 @@ export default function PromotionalCards() {
                 <div className="card-image">
                   {card.imageUrl ? (
                     <img 
-                      src={`http://localhost:3000/${card.imageUrl}`} 
+                      src={`${API_BASE_URL}/${card.imageUrl}`} 
                       alt={card.title}
                       onError={(e) => {
                         const target = e.target as HTMLImageElement;

@@ -20,6 +20,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import AuthGuard from '@/components/AuthGuard';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { API_BASE_URL } from '@/config/api';
 
 
 interface RepairRequest {
@@ -146,7 +147,7 @@ export default function MyRequestsScreen() {
       const token = await AsyncStorage.getItem('userToken');
       
       if (activeTab === 'repair') {
-        const response = await fetch('http://localhost:3000/api/repair/requests', {
+        const response = await fetch(`${API_BASE_URL}/api/repair/requests`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -166,7 +167,7 @@ export default function MyRequestsScreen() {
           setRepairRequests([]);
         }
       } else {
-        const response = await fetch('http://localhost:3000/api/rental/requests', {
+        const response = await fetch(`${API_BASE_URL}/api/rental/requests`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

@@ -39,24 +39,46 @@ const upload = multer({
         const extname = path.extname(file.originalname).toLowerCase();
         
         if (file.mimetype.startsWith('image/') && allowedImageTypes.test(extname)) {
-            // Check photo count limit (max 5)
-            const photoCount = req.files ? req.files.filter(f => f.mimetype.startsWith('image/')).length : 0;
-            if (photoCount >= 5) {
-                return cb(new Error('Maximum 5 photos allowed'));
-            }
             return cb(null, true);
         } else if (file.mimetype.startsWith('video/') && allowedVideoTypes.test(extname)) {
-            // Check video count limit (max 1)
-            const videoCount = req.files ? req.files.filter(f => f.mimetype.startsWith('video/')).length : 0;
-            if (videoCount >= 1) {
-                return cb(new Error('Only 1 video allowed'));
-            }
             return cb(null, true);
         } else {
             cb(new Error('Only image (JPEG, PNG, GIF) and video (MP4, AVI, MOV, MKV) files are allowed!'));
         }
     }
-});
+}).array('files', 6);
+
+// Error handling middleware for multer
+const handleUpload = (req, res, next) => {
+    upload(req, res, (err) => {
+        if (err instanceof multer.MulterError) {
+            console.error('Multer error:', err);
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'File too large. Maximum 50MB allowed.' 
+                });
+            } else if (err.code === 'LIMIT_FILE_COUNT') {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'Too many files. Maximum 6 files allowed.' 
+                });
+            } else {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: `Upload error: ${err.message}` 
+                });
+            }
+        } else if (err) {
+            console.error('File upload error:', err);
+            return res.status(400).json({ 
+                success: false, 
+                message: err.message 
+            });
+        }
+        next();
+    });
+};
 
 // ==================== ADMIN ROUTES ====================
 
@@ -629,10 +651,50 @@ router.get('/mechanic-charge', (req, res) => {
 });
 
 // 4. Create repair request (User)
-router.post('/requests', authenticateToken, requireUser, upload.array('files', 6), async (req, res) => {
+router.post('/requests', authenticateToken, requireUser, handleUpload, (req, res) => {
+    console.log('=== REPAIR REQUEST CREATION STARTED ===');
+    console.log('Received request body:', req.body);
+    console.log('Received files:', req.files ? req.files.map(f => ({
+        originalname: f.originalname,
+        filename: f.filename,
+        mimetype: f.mimetype,
+        size: f.size
+    })) : 'No files');
+    
     try {
-        console.log('Received request body:', req.body);
-        console.log('Received files:', req.files);
+        // ✅ VALIDATE FILE COUNTS AFTER UPLOAD
+        if (req.files && req.files.length > 0) {
+            const photoCount = req.files.filter(f => f.mimetype.startsWith('image/')).length;
+            const videoCount = req.files.filter(f => f.mimetype.startsWith('video/')).length;
+            
+            console.log(`File upload details:`, {
+                totalFiles: req.files.length,
+                photos: photoCount,
+                videos: videoCount,
+                fileDetails: req.files.map(f => ({
+                    originalname: f.originalname,
+                    mimetype: f.mimetype,
+                    size: f.size
+                }))
+            });
+            
+            if (photoCount > 5) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'Maximum 5 photos allowed' 
+                });
+            }
+            
+            if (videoCount > 1) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'Only 1 video allowed' 
+                });
+            }
+            
+            console.log(`File validation passed: ${photoCount} photos, ${videoCount} videos`);
+        }
+        
         const {
             contactNumber,
             alternateNumber,
@@ -645,12 +707,21 @@ router.post('/requests', authenticateToken, requireUser, upload.array('files', 6
             totalAmount
         } = req.body;
 
+        // Validate required fields
+        if (!contactNumber || !address || !timeSlotId || !totalAmount) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Missing required fields: contactNumber, address, timeSlotId, totalAmount' 
+            });
+        }
+
         // Parse services
         let services = [];
         if (req.body.services) {
             try {
                 services = JSON.parse(req.body.services);
             } catch (e) {
+                console.error('JSON parse error for services:', e);
                 return res.status(400).json({ success: false, message: 'Invalid services format (JSON parse error)' });
             }
         }
@@ -664,8 +735,11 @@ router.post('/requests', authenticateToken, requireUser, upload.array('files', 6
             }
         }
 
+        console.log('All validations passed, proceeding with database insertion...');
+
         // Calculate expiry time (15 minutes from now)
         const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+        
         // Insert repair request
         db.run(
             `INSERT INTO repair_requests (
@@ -681,11 +755,15 @@ router.post('/requests', authenticateToken, requireUser, upload.array('files', 6
                     console.error('Error creating repair request:', err);
                     return res.status(500).json({ success: false, message: 'Failed to create repair request' });
                 }
+                
                 const requestId = this.lastID;
+                console.log(`Repair request created with ID: ${requestId}`);
+                
                 // Insert services
                 const serviceQuery = 'INSERT INTO repair_request_services (repair_request_id, repair_service_id, price, discount_amount) VALUES (?, ?, ?, ?)';
                 let completed = 0;
                 let serviceError = false;
+                
                 services.forEach((service, index) => {
                     db.run(serviceQuery, [requestId, service.serviceId, service.price, service.discountAmount || 0], (err) => {
                         if (err) {
@@ -697,31 +775,42 @@ router.post('/requests', authenticateToken, requireUser, upload.array('files', 6
                             if (serviceError) {
                                 return res.status(500).json({ success: false, message: 'Failed to insert services' });
                             }
+                            
+                            console.log('All services inserted successfully');
+                            
                             // Insert files
                             if (req.files && req.files.length > 0) {
+                                console.log(`Inserting ${req.files.length} files...`);
                                 const fileQuery = 'INSERT INTO repair_request_files (repair_request_id, file_url, file_type, display_order) VALUES (?, ?, ?, ?)';
                                 let filesCompleted = 0;
                                 let fileError = false;
+                                
                                 req.files.forEach((file, index) => {
                                     const fileType = file.mimetype.startsWith('image/') ? 'image' : 'video';
                                     const fileUrl = `/uploads/repair-requests/${file.filename}`;
+                                    
+                                    console.log(`Inserting file: ${fileUrl} (${fileType})`);
+                                    
                                     db.run(fileQuery, [requestId, fileUrl, fileType, index], (err) => {
                                         if (err) {
                                             console.error('[ERROR] Failed to insert file:', { requestId, fileUrl, fileType, index, error: err });
                                             fileError = true;
                                         } else {
-                                            console.log('[DEBUG] File inserted successfully:', { requestId, fileUrl, fileType, index });
+                                            console.log('[SUCCESS] File inserted successfully:', { requestId, fileUrl, fileType, index });
                                         }
                                         filesCompleted++;
                                         if (filesCompleted === req.files.length) {
                                             if (fileError) {
                                                 return res.status(500).json({ success: false, message: 'Failed to insert files' });
                                             }
+                                            console.log('=== REPAIR REQUEST CREATION COMPLETED SUCCESSFULLY ===');
                                             return res.status(201).json({ success: true, message: 'Repair request created successfully', data: { requestId } });
                                         }
                                     });
                                 });
                             } else {
+                                console.log('No files to insert');
+                                console.log('=== REPAIR REQUEST CREATION COMPLETED SUCCESSFULLY ===');
                                 return res.status(201).json({ success: true, message: 'Repair request created successfully', data: { requestId } });
                             }
                         }
@@ -731,6 +820,18 @@ router.post('/requests', authenticateToken, requireUser, upload.array('files', 6
         );
     } catch (error) {
         console.error('Unexpected error in repair request creation:', error);
+        
+        // ✅ IMPROVED ERROR HANDLING - Clean up uploaded files on error
+        if (req.files && req.files.length > 0) {
+            req.files.forEach(file => {
+                const filePath = path.join(__dirname, '../uploads/repair-requests', file.filename);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`Cleaned up file: ${file.filename}`);
+                }
+            });
+        }
+        
         return res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });

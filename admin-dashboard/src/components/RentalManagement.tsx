@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 
 interface RentalRequest {
   id: number;
@@ -100,7 +101,7 @@ const RentalManagement: React.FC = () => {
       setLoading(true);
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/rental/admin/requests', {
+      const response = await fetch(`${API_BASE_URL}/api/rental/admin/requests`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -121,12 +122,12 @@ const RentalManagement: React.FC = () => {
     }
   };
 
-  const fetchBicycles = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/rental/admin/bicycles', {
+      const fetchBicycles = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const token = localStorage.getItem('adminToken');
+        const response = await fetch(`${API_BASE_URL}/api/rental/admin/bicycles`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -156,7 +157,7 @@ const RentalManagement: React.FC = () => {
         requestBody.rejectionNote = rejectionNote;
       }
       
-      const response = await fetch(`http://localhost:3000/api/rental/admin/requests/${requestId}/status`, {
+      const response = await fetch(`${API_BASE_URL}/api/rental/admin/requests/${requestId}/status`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -180,7 +181,7 @@ const RentalManagement: React.FC = () => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/rental/admin/requests/${requestId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/rental/admin/requests/${requestId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -221,7 +222,7 @@ const RentalManagement: React.FC = () => {
         formData.append('photos', file);
       });
       
-      const response = await fetch('http://localhost:3000/api/rental/admin/bicycles', {
+      const response = await fetch(`${API_BASE_URL}/api/rental/admin/bicycles`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -249,7 +250,7 @@ const RentalManagement: React.FC = () => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/rental/admin/bicycles/${bicycleId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/rental/admin/bicycles/${bicycleId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -283,7 +284,7 @@ const RentalManagement: React.FC = () => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/rental/admin/bicycles/${bicycleId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/rental/admin/bicycles/${bicycleId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -912,7 +913,7 @@ const RentalManagement: React.FC = () => {
                             {bicycle.photos.map((photo, index) => (
                               <img 
                                 key={index} 
-                                src={`http://localhost:3000/${photo}`} 
+                                src={`${API_BASE_URL}/${photo}`} 
                                 alt={`Bicycle ${index + 1}`}
                                 className="bicycle-photo"
                               />

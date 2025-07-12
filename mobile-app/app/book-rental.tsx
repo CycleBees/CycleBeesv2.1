@@ -20,6 +20,7 @@ import { useRouter } from 'expo-router';
 import AuthGuard from '@/components/AuthGuard';
 import PageTransition from '@/components/PageTransition';
 import StepIndicator from '@/components/StepIndicator';
+import { API_BASE_URL } from '@/config/api';
 
 
 interface Bicycle {
@@ -99,7 +100,7 @@ export default function BookRentalScreen() {
   const fetchUserProfile = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const response = await fetch('http://localhost:3000/api/auth/profile', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/profile`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -122,7 +123,7 @@ export default function BookRentalScreen() {
 
   const fetchBicycles = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/rental/bicycles');
+      const response = await fetch(`${API_BASE_URL}/api/rental/bicycles`);
       if (response.ok) {
         const data = await response.json();
         setBicycles(data.data || []);
@@ -160,7 +161,7 @@ export default function BookRentalScreen() {
       const items = ['rental_services', 'delivery_charge'];
       const totalAmount = calculateTotal();
       
-      const response = await fetch('http://localhost:3000/api/coupon/apply', {
+      const response = await fetch(`${API_BASE_URL}/api/coupon/apply`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -276,7 +277,7 @@ export default function BookRentalScreen() {
       
       console.log('Submitting rental request with data:', requestData);
       
-      const response = await fetch('http://localhost:3000/api/rental/requests', {
+      const response = await fetch(`${API_BASE_URL}/api/rental/requests`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -396,7 +397,7 @@ export default function BookRentalScreen() {
                       source={{ 
                         uri: bicycle.photos[0].photo_url.startsWith('http') 
                           ? bicycle.photos[0].photo_url 
-                          : `http://localhost:3000/${bicycle.photos[0].photo_url}`
+                          : `${API_BASE_URL}/${bicycle.photos[0].photo_url}`
                       }}
                       style={styles.bicyclePhotoCompact}
                       resizeMode="cover"
@@ -988,7 +989,7 @@ export default function BookRentalScreen() {
                                 source={{ 
                                   uri: photo.photo_url.startsWith('http') 
                                     ? photo.photo_url 
-                                    : `http://localhost:3000/${photo.photo_url}`
+                                    : `${API_BASE_URL}/${photo.photo_url}`
                                 }}
                                 style={styles.modalPhoto}
                                 resizeMode="cover"

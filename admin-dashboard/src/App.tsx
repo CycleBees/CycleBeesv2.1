@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from './config/api';
 import './App.css';
 import Sidebar from './components/Sidebar';
 import DashboardOverview from './components/DashboardOverview';
@@ -32,7 +33,7 @@ function App() {
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/admin/login', {
+      const response = await fetch('${API_BASE_URL}/api/auth/admin/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

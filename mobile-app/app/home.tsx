@@ -23,6 +23,7 @@ import { useRouter } from 'expo-router';
 import SplashAnimation from '@/components/SplashAnimation';
 import AuthGuard from '@/components/AuthGuard';
 import { Colors } from '@/constants/Colors';
+import { API_BASE_URL } from '@/config/api';
 
 
 interface PromotionalCard {
@@ -101,7 +102,7 @@ export default function HomeScreen() {
     try {
       setIsLoadingUser(true);
       const token = await AsyncStorage.getItem('userToken');
-      const response = await fetch('http://localhost:3000/api/auth/profile', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/profile`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -128,7 +129,7 @@ export default function HomeScreen() {
   const fetchPromotionalCards = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3000/api/promotional/cards');
+      const response = await fetch(`${API_BASE_URL}/api/promotional/cards`);
       
       if (response.ok) {
         const data = await response.json();
@@ -143,7 +144,7 @@ export default function HomeScreen() {
 
   const fetchContactSettings = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/contact/settings');
+      const response = await fetch(`${API_BASE_URL}/api/contact/settings`);
       
       if (response.ok) {
         const data = await response.json();
@@ -274,7 +275,7 @@ export default function HomeScreen() {
       <View style={styles.cardImageContainer}>
         {item.image_url ? (
           <Image
-            source={{ uri: `http://localhost:3000/${item.image_url}` }}
+            source={{ uri: `${API_BASE_URL}/${item.image_url}` }}
             style={styles.cardImage}
             resizeMode="cover"
             onError={() => {
@@ -336,7 +337,7 @@ export default function HomeScreen() {
           <View style={styles.avatarContainer}>
             {user.profile_photo ? (
               <Image
-                source={{ uri: `http://localhost:3000/${user.profile_photo}` }}
+                source={{ uri: `${API_BASE_URL}/${user.profile_photo}` }}
                 style={styles.avatarImage}
               />
             ) : (

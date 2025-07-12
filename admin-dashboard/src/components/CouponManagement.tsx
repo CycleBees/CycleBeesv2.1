@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 
 interface Coupon {
   id: number;
@@ -51,7 +52,7 @@ const CouponManagement: React.FC = () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/coupon/admin', {
+      const response = await fetch(`${API_BASE_URL}/api/coupon/admin`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -123,7 +124,7 @@ const CouponManagement: React.FC = () => {
         description: `Coupon ${newCoupon.code.trim()}` // Add description as it's required
       };
 
-      const response = await fetch('http://localhost:3000/api/coupon/admin', {
+      const response = await fetch(`${API_BASE_URL}/api/coupon/admin`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -173,7 +174,7 @@ const CouponManagement: React.FC = () => {
 
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/coupon/admin/${couponToDelete.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/coupon/admin/${couponToDelete.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

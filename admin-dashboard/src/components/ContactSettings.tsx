@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 import './ContactSettings.css';
 
 interface ContactSettings {
@@ -38,7 +39,7 @@ export default function ContactSettings() {
       setLoading(true);
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/contact/admin/contact-settings', {
+      const response = await fetch(`${API_BASE_URL}/api/contact/admin/contact-settings`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -75,7 +76,7 @@ export default function ContactSettings() {
       setSuccess(null);
       
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/contact/admin/contact-settings', {
+      const response = await fetch(`${API_BASE_URL}/api/contact/admin/contact-settings`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

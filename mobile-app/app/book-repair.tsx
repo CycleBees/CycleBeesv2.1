@@ -22,6 +22,7 @@ import { useRouter } from 'expo-router';
 import AuthGuard from '@/components/AuthGuard';
 import PageTransition from '@/components/PageTransition';
 import StepIndicator from '@/components/StepIndicator';
+import { API_BASE_URL } from '@/config/api';
 
 
 interface RepairService {
@@ -103,6 +104,30 @@ export default function BookRepairScreen() {
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
 
   const [errors, setErrors] = useState<{[key: string]: string}>({});
+
+  // ✅ UTILITY FUNCTION TO GET FILE TYPE
+  const getFileTypeFromUri = (uri: string): string => {
+    const extension = uri.split('.').pop()?.toLowerCase();
+    switch (extension) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'mp4':
+        return 'video/mp4';
+      case 'avi':
+        return 'video/avi';
+      case 'mov':
+        return 'video/quicktime';
+      case 'mkv':
+        return 'video/x-matroska';
+      default:
+        return 'image/jpeg'; // fallback
+    }
+  };
 
   useEffect(() => {
     fetchUserProfile();
@@ -217,7 +242,7 @@ export default function BookRepairScreen() {
   const fetchUserProfile = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const response = await fetch('http://localhost:3000/api/auth/profile', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/profile`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -240,7 +265,7 @@ export default function BookRepairScreen() {
 
   const fetchRepairServices = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/repair/services');
+      const response = await fetch(`${API_BASE_URL}/api/repair/services`);
       if (response.ok) {
         const data = await response.json();
         setRepairServices(data.data || []);
@@ -252,7 +277,7 @@ export default function BookRepairScreen() {
 
   const fetchTimeSlots = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/repair/time-slots');
+      const response = await fetch(`${API_BASE_URL}/api/repair/time-slots`);
       if (response.ok) {
         const data = await response.json();
         setTimeSlots(data.data || []);
@@ -264,7 +289,7 @@ export default function BookRepairScreen() {
 
   const fetchMechanicCharge = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/repair/mechanic-charge');
+      const response = await fetch(`${API_BASE_URL}/api/repair/mechanic-charge`);
       if (response.ok) {
         const data = await response.json();
         setMechanicCharge(data.data.amount || 0);
@@ -284,32 +309,79 @@ export default function BookRepairScreen() {
   };
 
   const pickImage = async () => {
-    if (images.length >= 6) {
-      Alert.alert('Error', 'Maximum 6 images allowed');
+    if (images.length >= 5) {
+      Alert.alert('Error', 'Maximum 5 images allowed');
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
 
-    if (!result.canceled && result.assets[0]) {
-      setImages([...images, result.assets[0].uri]);
+      if (!result.canceled && result.assets[0]) {
+        // ✅ ADD FILE SIZE VALIDATION
+        try {
+          const fileInfo = await fetch(result.assets[0].uri);
+          const blob = await fileInfo.blob();
+          
+          if (blob.size > 50 * 1024 * 1024) { // 50MB
+            Alert.alert('Error', 'File size too large. Maximum 50MB allowed.');
+            return;
+          }
+          
+          setImages([...images, result.assets[0].uri]);
+        } catch (error) {
+          console.error('Error checking file size:', error);
+          // If we can't check size, still allow the file but warn user
+          Alert.alert('Warning', 'Could not verify file size. Please ensure it\'s under 50MB.');
+          setImages([...images, result.assets[0].uri]);
+        }
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
 
   const pickVideo = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-      allowsEditing: true,
-      quality: 0.8,
-    });
+    if (video) {
+      Alert.alert('Error', 'Only 1 video allowed. Please remove the current video first.');
+      return;
+    }
 
-    if (!result.canceled && result.assets[0]) {
-      setVideo(result.assets[0].uri);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        // ✅ ADD FILE SIZE VALIDATION
+        try {
+          const fileInfo = await fetch(result.assets[0].uri);
+          const blob = await fileInfo.blob();
+          
+          if (blob.size > 50 * 1024 * 1024) { // 50MB
+            Alert.alert('Error', 'File size too large. Maximum 50MB allowed.');
+            return;
+          }
+          
+          setVideo(result.assets[0].uri);
+        } catch (error) {
+          console.error('Error checking file size:', error);
+          // If we can't check size, still allow the file but warn user
+          Alert.alert('Warning', 'Could not verify file size. Please ensure it\'s under 50MB.');
+          setVideo(result.assets[0].uri);
+        }
+      }
+    } catch (error) {
+      console.error('Error picking video:', error);
+      Alert.alert('Error', 'Failed to pick video. Please try again.');
     }
   };
 
@@ -354,7 +426,7 @@ export default function BookRepairScreen() {
         totalAmount: totalAmount
       });
       
-      const response = await fetch('http://localhost:3000/api/coupon/apply', {
+      const response = await fetch(`${API_BASE_URL}/api/coupon/apply`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -431,20 +503,28 @@ export default function BookRepairScreen() {
         }))
       ));
 
-      // Add images and video as 'files' - backend expects files array
+      // ✅ IMPROVED FILE APPENDING with better naming and file type detection
       images.forEach((imageUri, index) => {
+        const timestamp = Date.now();
+        const fileType = getFileTypeFromUri(imageUri);
+        const extension = fileType.split('/')[1];
+        const fileName = `image_${index}_${timestamp}.${extension}`;
         formDataToSend.append('files', {
           uri: imageUri,
-          type: 'image/jpeg',
-          name: `image_${index}.jpg`
+          type: fileType,
+          name: fileName
         } as any);
       });
 
       if (video) {
+        const timestamp = Date.now();
+        const fileType = getFileTypeFromUri(video);
+        const extension = fileType.split('/')[1];
+        const videoFileName = `video_${timestamp}.${extension}`;
         formDataToSend.append('files', {
           uri: video,
-          type: 'video/mp4',
-          name: 'video.mp4'
+          type: fileType,
+          name: videoFileName
         } as any);
       }
       
@@ -466,7 +546,7 @@ export default function BookRepairScreen() {
         filesCount: images.length + (video ? 1 : 0)
       });
 
-      const response = await fetch('http://localhost:3000/api/repair/requests', {
+      const response = await fetch(`${API_BASE_URL}/api/repair/requests`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -489,14 +569,22 @@ export default function BookRepairScreen() {
         }, 500);
         return;
       } else {
+        // ✅ IMPROVED ERROR HANDLING
         console.error('Backend error:', data);
-        const errorMessage = data.message || data.errors?.map((e: any) => e.msg).join(', ') || 'Failed to submit repair request';
+        let errorMessage = 'Failed to submit repair request';
+        
+        if (data.message) {
+          errorMessage = data.message;
+        } else if (data.errors && Array.isArray(data.errors)) {
+          errorMessage = data.errors.map((e: any) => e.msg).join(', ');
+        }
+        
         Alert.alert('Error', errorMessage);
         setLoading(false);
       }
     } catch (error) {
       console.error('Network error:', error);
-      Alert.alert('Error', 'Network error. Please try again.');
+      Alert.alert('Error', 'Network error. Please check your connection and try again.');
       setLoading(false);
     }
   };
@@ -643,7 +731,7 @@ export default function BookRepairScreen() {
             <View style={styles.imagePreview}>
               {images.map((uri, index) => (
                 <View key={index} style={styles.imageContainer}>
-                  <Image source={{ uri }} style={styles.previewImage} />
+                  <Image source={{ uri: `${API_BASE_URL}/${uri}` }} style={styles.previewImage} />
                   <TouchableOpacity
                     style={styles.removeButton}
                     onPress={() => removeImage(index)}

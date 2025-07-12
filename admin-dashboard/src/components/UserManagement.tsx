@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 
 interface User {
   id: number;
@@ -32,7 +33,7 @@ const UserManagement: React.FC = () => {
       setLoading(true);
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/dashboard/users', {
+      const response = await fetch(`${API_BASE_URL}/api/dashboard/users`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -63,7 +64,7 @@ const UserManagement: React.FC = () => {
     try {
       setError(null);
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`http://localhost:3000/api/dashboard/users/${userId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/dashboard/users/${userId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -174,7 +175,7 @@ const UserManagement: React.FC = () => {
                   <div className="user-avatar">
                     {user.profile_photo ? (
                       <img 
-                        src={`http://localhost:3000/${user.profile_photo}`} 
+                        src={`${API_BASE_URL}/${user.profile_photo}`} 
                         alt={user.full_name}
                       />
                     ) : (
@@ -291,7 +292,7 @@ const UserManagement: React.FC = () => {
                 <div className="profile-photo">
                   <label>Profile Photo:</label>
                   <img 
-                    src={`http://localhost:3000/${selectedUser.profile_photo}`} 
+                    src={`${API_BASE_URL}/${selectedUser.profile_photo}`} 
                     alt={selectedUser.full_name}
                   />
                 </div>
